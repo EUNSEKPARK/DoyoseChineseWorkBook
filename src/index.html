@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red Rectangle Detector</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:#0a0a0f; --surface:#13131a; --surface2:#1a1a25;
+            --border:#2a2a3a; --red-accent:#ff3b3b;
+            --red-glow:rgba(255,59,59,0.3);
+            --text:#e8e8f0; --text-dim:#8888a0; --green:#3bff8a;
+        }
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+        header{padding:24px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,rgba(255,59,59,0.03) 0%,transparent 100%);}
+        .logo-icon{width:36px;height:36px;border:2px solid var(--red-accent);border-radius:8px;display:flex;align-items:center;justify-content:center;animation:pulse 3s ease-in-out infinite;}
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--red-glow);}50%{box-shadow:0 0 12px 2px var(--red-glow);}}
+        .logo-icon::after{content:'';width:14px;height:14px;border:2px solid var(--red-accent);border-radius:3px;}
+        header h1{font-size:18px;font-weight:600;} header h1 span{color:var(--red-accent);}
+
+        .app-container{display:grid;grid-template-columns:1fr 380px;height:calc(100vh - 73px);}
+
+        .canvas-area{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow:hidden;}
+
+        .drop-zone{width:100%;height:100%;border:2px dashed var(--border);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;cursor:pointer;transition:all 0.3s;}
+        .drop-zone:hover,.drop-zone.drag-over{border-color:var(--red-accent);background:rgba(255,59,59,0.03);}
+        .drop-zone.hidden{display:none;}
+        .drop-icon{width:64px;height:64px;border:2px solid var(--border);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:26px;}
+        .drop-text{font-size:14px;color:var(--text-dim);} .drop-text strong{color:var(--text);}
+        .drop-sub{font-size:11px;color:var(--text-dim);opacity:0.6;}
+        #fileInput{display:none;}
+
+        /* KEY FIX: canvas-wrapper is positioned relative, both canvases fill it */
+        .canvas-wrapper{display:none;position:relative;max-width:100%;max-height:calc(100vh - 170px);}
+        .canvas-wrapper.active{display:inline-block;}
+
+        #mainCanvas{display:block;max-width:100%;max-height:calc(100vh - 170px);border-radius:8px;}
+
+        /* KEY FIX: overlay canvas matches wrapper size exactly via CSS */
+        #overlayCanvas{
+            position:absolute;top:0;left:0;
+            width:100%;height:100%;
+            pointer-events:none;border-radius:8px;
+        }
+
+        .controls-bar{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 14px;z-index:10;}
+        .controls-bar.active{display:flex;}
+
+        .btn{padding:7px 18px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+        .btn:hover{border-color:var(--text-dim);background:var(--border);}
+        .btn-primary{background:var(--red-accent);border-color:var(--red-accent);color:#fff;}
+        .btn-primary:hover{background:#e83232;box-shadow:0 0 20px var(--red-glow);}
+        .btn-primary:disabled{background:#553333;border-color:#553333;cursor:not-allowed;box-shadow:none;}
+
+        .sidebar{border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden;}
+        .sidebar-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+        .sidebar-header h2{font-size:14px;font-weight:600;}
+        .badge{background:var(--red-accent);color:#fff;font-size:11px;font-weight:600;padding:2px 10px;border-radius:20px;}
+
+        .settings-section{padding:16px 20px;border-bottom:1px solid var(--border);}
+        .settings-section h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:14px;}
+        .setting-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+        .setting-row:last-child{margin-bottom:0;}
+        .setting-label{font-size:12px;}
+        .setting-value{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red-accent);background:rgba(255,59,59,0.08);padding:3px 8px;border-radius:5px;min-width:44px;text-align:center;}
+        input[type="range"]{width:100px;accent-color:var(--red-accent);cursor:pointer;}
+
+        .results-area{flex:1;overflow-y:auto;padding:8px;}
+        .results-area::-webkit-scrollbar{width:5px;}
+        .results-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+        .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:12px;gap:6px;text-align:center;padding:32px;}
+        .empty-state-icon{font-size:32px;opacity:0.3;margin-bottom:6px;}
+
+        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;}
+        @keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .rect-card:hover,.rect-card.active{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
+        .rect-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+        .rect-card-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;}
+        .rect-card-title .dot{width:7px;height:7px;background:var(--red-accent);border-radius:50%;box-shadow:0 0 6px var(--red-glow);}
+        .rect-card-size{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);}
+        .rect-coords{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+        .coord-item{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);background:var(--bg);padding:5px 8px;border-radius:5px;}
+        .coord-item span{color:var(--green);}
+
+        .sidebar-footer{padding:14px 20px;border-top:1px solid var(--border);}
+        .btn-full{width:100%;justify-content:center;display:flex;align-items:center;gap:6px;}
+
+        .toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#000;font-size:12px;font-weight:600;padding:10px 20px;border-radius:10px;transform:translateY(80px);opacity:0;transition:all 0.3s;z-index:100;}
+        .toast.show{transform:translateY(0);opacity:1;}
+
+        .processing{position:absolute;inset:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:20;border-radius:8px;}
+        .processing.active{display:flex;}
+        .processing span{font-size:14px;color:var(--text);}
+
+        @media(max-width:900px){.app-container{grid-template-columns:1fr;grid-template-rows:1fr auto;}.sidebar{max-height:50vh;}}
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo-icon"></div>
+    <h1><span>Red</span> Rectangle Detector</h1>
+</header>
+<div class="app-container">
+    <div class="canvas-area">
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-icon">📷</div>
+            <div class="drop-text"><strong>이미지를 드래그</strong>하거나 클릭하세요</div>
+            <div class="drop-sub">PNG, JPG, BMP 지원</div>
+        </div>
+        <div class="canvas-wrapper" id="canvasWrapper">
+            <canvas id="mainCanvas"></canvas>
+            <canvas id="overlayCanvas"></canvas>
+            <div class="processing" id="proc"><span>⏳ 감지 중...</span></div>
+        </div>
+        <div class="controls-bar" id="controlsBar">
+            <button class="btn btn-primary" id="detectBtn">🔍 감지 실행</button>
+            <button class="btn" id="resetBtn">새 이미지</button>
+            <button class="btn" id="toggleBtn">오버레이 ON</button>
+        </div>
+    </div>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>감지 결과</h2>
+            <div class="badge" id="countBadge">0</div>
+        </div>
+        <div class="settings-section">
+            <h3>감지 설정</h3>
+            <div class="setting-row">
+                <span class="setting-label">최소 영역</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="range" id="minArea" min="100" max="5000" value="800" step="100">
+                    <span class="setting-value" id="minAreaVal">800</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">채도 하한</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="range" id="satThresh" min="30" max="220" value="120" step="5">
+                    <span class="setting-value" id="satThreshVal">120</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">밝기 하한</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="range" id="valThresh" min="30" max="220" value="120" step="5">
+                    <span class="setting-value" id="valThreshVal">120</span>
+                </div>
+            </div>
+        </div>
+        <div class="results-area" id="resultsArea">
+            <div class="empty-state"><div class="empty-state-icon">⬜</div>이미지를 업로드하고<br>감지를 실행하세요</div>
+        </div>
+        <div class="sidebar-footer" id="sidebarFooter" style="display:none;">
+            <button class="btn btn-full" id="copyAllBtn">📋 전체 좌표 복사 (JSON)</button>
+        </div>
+    </div>
+</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" accept="image/*">
+
+<script>
+let currentImage=null, detectedRects=[], overlayVisible=true;
+const $=id=>document.getElementById(id);
+const dropZone=$('dropZone'),fileInput=$('fileInput'),canvasWrapper=$('canvasWrapper');
+const mainCanvas=$('mainCanvas'),overlayCanvas=$('overlayCanvas');
+const mainCtx=mainCanvas.getContext('2d',{willReadFrequently:true});
+const overlayCtx=overlayCanvas.getContext('2d');
+
+// ═══ RGB → HSV (H:0-180, S:0-255, V:0-255) ═══
+function rgbToHsv(r,g,b){
+    const rf=r/255,gf=g/255,bf=b/255;
+    const mx=Math.max(rf,gf,bf),mn=Math.min(rf,gf,bf),d=mx-mn;
+    let h=0;
+    if(d!==0){
+        if(mx===rf)h=((gf-bf)/d+(gf<bf?6:0))/6;
+        else if(mx===gf)h=((bf-rf)/d+2)/6;
+        else h=((rf-gf)/d+4)/6;
+    }
+    return[h*180,mx===0?0:(d/mx)*255,mx*255];
+}
+
+// ═══ Red mask (no morphology needed for thick borders) ═══
+function createRedMask(imgData,satMin,valMin){
+    const{width:w,height:h,data}=imgData;
+    const mask=new Uint8Array(w*h);
+    for(let i=0;i<data.length;i+=4){
+        const[hue,s,v]=rgbToHsv(data[i],data[i+1],data[i+2]);
+        if((hue<=8||hue>=172)&&s>=satMin&&v>=valMin) mask[i>>2]=255;
+    }
+    return mask;
+}
+
+// ═══ Contour tracing approach: find external contours ═══
+// Uses Moore boundary tracing to find outer boundaries of connected white regions
+function findContourBoundingBoxes(mask,w,h,minArea){
+    // Use scanline-based connected component labeling
+    // Then compute bounding boxes for each component
+    const visited=new Uint8Array(w*h);
+    const results=[];
+
+    for(let sy=0;sy<h;sy++){
+        for(let sx=0;sx<w;sx++){
+            const sidx=sy*w+sx;
+            if(mask[sidx]===0||visited[sidx]) continue;
+
+            // BFS flood fill for this component
+            let minX=sx,maxX=sx,minY=sy,maxY=sy;
+            let count=0;
+            const queue=[sidx];
+            visited[sidx]=1;
+
+            while(queue.length>0){
+                const idx=queue.pop();
+                const cx=idx%w, cy=(idx-cx)/w;
+                count++;
+                if(cx<minX)minX=cx; if(cx>maxX)maxX=cx;
+                if(cy<minY)minY=cy; if(cy>maxY)maxY=cy;
+
+                // 4-connectivity only (prevents merging diagonally adjacent rects)
+                const neighbors=[idx-1,idx+1,idx-w,idx+w];
+                for(const ni of neighbors){
+                    if(ni>=0&&ni<w*h&&mask[ni]===255&&!visited[ni]){
+                        const nx=ni%w;
+                        // Prevent wrapping
+                        if(Math.abs(nx-(idx%w))<=1){
+                            visited[ni]=1;
+                            queue.push(ni);
+                        }
+                    }
+                }
+            }
+
+            const bw=maxX-minX+1, bh=maxY-minY+1;
+            const area=bw*bh;
+            if(area>=minArea){
+                const aspect=Math.max(bw,bh)/Math.max(Math.min(bw,bh),1);
+                if(aspect<20){
+                    results.push({x:minX,y:minY,width:bw,height:bh,area,pixelCount:count});
+                }
+            }
+        }
+    }
+    return results;
+}
+
+// ═══ Merge overlapping rectangles ═══
+function mergeOverlapping(rects){
+    if(rects.length<=1) return rects;
+    rects.sort((a,b)=>b.area-a.area);
+    const used=new Set(),merged=[];
+    for(let i=0;i<rects.length;i++){
+        if(used.has(i)) continue;
+        let{x,y,width:w,height:h}=rects[i];
+        let x2=x+w,y2=y+h;
+        for(let j=i+1;j<rects.length;j++){
+            if(used.has(j)) continue;
+            const r=rects[j],rx2=r.x+r.width,ry2=r.y+r.height;
+            const ox=Math.max(0,Math.min(x2,rx2)-Math.max(x,r.x));
+            const oy=Math.max(0,Math.min(y2,ry2)-Math.max(y,r.y));
+            const smallerArea=Math.min(w*h,r.width*r.height);
+            if(ox*oy/smallerArea>0.3){
+                x=Math.min(x,r.x);y=Math.min(y,r.y);
+                x2=Math.max(x2,rx2);y2=Math.max(y2,ry2);
+                w=x2-x;h=y2-y;used.add(j);
+            }
+        }
+        merged.push({x,y,width:x2-x,height:y2-y,area:(x2-x)*(y2-y)});
+    }
+    return merged;
+}
+
+// ═══ MAIN DETECTION ═══
+function detect(){
+    if(!currentImage) return;
+    $('detectBtn').disabled=true;
+    $('proc').classList.add('active');
+
+    requestAnimationFrame(()=>setTimeout(()=>{
+        try{
+            const minA=+$('minArea').value,satMin=+$('satThresh').value,valMin=+$('valThresh').value;
+            const w=mainCanvas.width,h=mainCanvas.height;
+            const imgData=mainCtx.getImageData(0,0,w,h);
+
+            // Step 1: Create red mask (no morphology - borders are thick enough)
+            const mask=createRedMask(imgData,satMin,valMin);
+
+            // Step 2: Find connected components with 4-connectivity
+            let comps=findContourBoundingBoxes(mask,w,h,minA);
+
+            // Step 3: Merge overlapping
+            detectedRects=mergeOverlapping(comps);
+            detectedRects.sort((a,b)=>b.area-a.area);
+            detectedRects.forEach((r,i)=>r.id=i+1);
+
+            drawOverlay();
+            renderResults();
+        }finally{
+            $('detectBtn').disabled=false;
+            $('proc').classList.remove('active');
+        }
+    },50));
+}
+
+// ═══ OVERLAY DRAWING ═══
+function drawOverlay(){
+    overlayCtx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+    if(!overlayVisible) return;
+    detectedRects.forEach((r,i)=>{
+        overlayCtx.fillStyle='rgba(0,255,100,0.08)';
+        overlayCtx.fillRect(r.x,r.y,r.width,r.height);
+        overlayCtx.strokeStyle='#00ff66';overlayCtx.lineWidth=2;
+        overlayCtx.setLineDash([8,4]);
+        overlayCtx.strokeRect(r.x,r.y,r.width,r.height);
+        overlayCtx.setLineDash([]);
+
+        const label=`#${i+1}  ${r.width}×${r.height}`;
+        overlayCtx.font='bold 13px JetBrains Mono,monospace';
+        const tw=overlayCtx.measureText(label).width;
+        overlayCtx.fillStyle='#00ff66';
+        overlayCtx.fillRect(r.x,r.y-20,tw+8,19);
+        overlayCtx.fillStyle='#000';
+        overlayCtx.fillText(label,r.x+4,r.y-5);
+
+        overlayCtx.fillStyle='#00ff66';
+        [[r.x,r.y],[r.x+r.width,r.y],[r.x,r.y+r.height],[r.x+r.width,r.y+r.height]].forEach(([cx,cy])=>{
+            overlayCtx.beginPath();overlayCtx.arc(cx,cy,4,0,Math.PI*2);overlayCtx.fill();
+        });
+    });
+}
+
+function highlight(idx){
+    drawOverlay();
+    const r=detectedRects[idx];if(!r) return;
+    overlayCtx.strokeStyle='#ffff00';overlayCtx.lineWidth=3;overlayCtx.setLineDash([]);
+    overlayCtx.strokeRect(r.x-3,r.y-3,r.width+6,r.height+6);
+}
+
+// ═══ RESULTS UI ═══
+function renderResults(){
+    $('countBadge').textContent=detectedRects.length;
+    if(!detectedRects.length){
+        $('resultsArea').innerHTML=`<div class="empty-state"><div class="empty-state-icon">🔍</div>빨간색 사각형을 찾지 못했습니다<br><small style="margin-top:6px;opacity:0.6">채도/밝기를 낮춰보세요</small></div>`;
+        $('sidebarFooter').style.display='none';return;
+    }
+    $('sidebarFooter').style.display='block';
+    $('resultsArea').innerHTML=detectedRects.map((r,i)=>`
+        <div class="rect-card" data-i="${i}" style="animation-delay:${i*0.04}s">
+            <div class="rect-card-header">
+                <div class="rect-card-title"><span class="dot"></span>사각형 #${i+1}</div>
+                <div class="rect-card-size">${r.width} × ${r.height}px</div>
+            </div>
+            <div class="rect-coords">
+                <div class="coord-item">X: <span>${r.x}</span></div>
+                <div class="coord-item">Y: <span>${r.y}</span></div>
+                <div class="coord-item">W: <span>${r.width}</span></div>
+                <div class="coord-item">H: <span>${r.height}</span></div>
+            </div>
+        </div>`).join('');
+
+    document.querySelectorAll('.rect-card').forEach(c=>c.addEventListener('click',()=>{
+        highlight(+c.dataset.i);
+        document.querySelectorAll('.rect-card').forEach(x=>x.classList.remove('active'));
+        c.classList.add('active');
+    }));
+}
+
+// ═══ IMAGE LOADING ═══
+function loadImage(file){
+    const reader=new FileReader();
+    reader.onload=e=>{
+        const img=new Image();
+        img.onload=()=>{
+            currentImage=img;
+            // Set canvas internal resolution to match image pixel dimensions
+            mainCanvas.width=img.naturalWidth;
+            mainCanvas.height=img.naturalHeight;
+            overlayCanvas.width=img.naturalWidth;
+            overlayCanvas.height=img.naturalHeight;
+            mainCtx.drawImage(img,0,0);
+
+            dropZone.classList.add('hidden');
+            canvasWrapper.classList.add('active');
+            $('controlsBar').classList.add('active');
+            detectedRects=[];renderResults();
+            overlayCtx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+        };
+        img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// ═══ EVENTS ═══
+dropZone.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');if(e.dataTransfer.files.length)loadImage(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',e=>{if(e.target.files.length)loadImage(e.target.files[0]);});
+$('detectBtn').addEventListener('click',detect);
+$('resetBtn').addEventListener('click',()=>{
+    currentImage=null;detectedRects=[];
+    dropZone.classList.remove('hidden');canvasWrapper.classList.remove('active');
+    $('controlsBar').classList.remove('active');$('sidebarFooter').style.display='none';
+    $('countBadge').textContent='0';
+    $('resultsArea').innerHTML=`<div class="empty-state"><div class="empty-state-icon">⬜</div>이미지를 업로드하고<br>감지를 실행하세요</div>`;
+    fileInput.value='';
+});
+$('toggleBtn').addEventListener('click',e=>{overlayVisible=!overlayVisible;e.target.textContent=overlayVisible?'오버레이 ON':'오버레이 OFF';drawOverlay();});
+$('copyAllBtn').addEventListener('click',()=>{
+    const d=detectedRects.map(r=>({id:r.id,x:r.x,y:r.y,width:r.width,height:r.height,x2:r.x+r.width,y2:r.y+r.height}));
+    navigator.clipboard.writeText(JSON.stringify(d,null,2)).then(()=>showToast('JSON 좌표가 클립보드에 복사되었습니다!'));
+});
+['minArea','satThresh','valThresh'].forEach(id=>{
+    $(id).addEventListener('input',()=>{$(id+'Val').textContent=$(id).value;});
+});
+function showToast(msg){$('toast').textContent=msg;$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2500);}
+</script>
+</body>
+</html>
