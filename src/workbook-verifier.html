@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>워크북 빨간 박스 좌표 추출 및 검증 시스템</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:#0a0a0f; --surface:#13131a; --surface2:#1a1a25;
+            --border:#2a2a3a; --red-accent:#ff3b3b;
+            --red-glow:rgba(255,59,59,0.3);
+            --text:#e8e8f0; --text-dim:#8888a0; --green:#3bff8a;
+            --yellow:#ffbb3b; --blue:#3b8bff;
+        }
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
+        header{padding:20px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,rgba(255,59,59,0.03) 0%,transparent 100%);}
+        .header-left{display:flex;align-items:center;gap:14px;}
+        .logo-icon{width:36px;height:36px;border:2px solid var(--red-accent);border-radius:8px;display:flex;align-items:center;justify-content:center;animation:pulse 3s ease-in-out infinite;}
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--red-glow);}50%{box-shadow:0 0 12px 2px var(--red-glow);}}
+        .logo-icon::after{content:'';width:14px;height:14px;border:2px solid var(--red-accent);border-radius:3px;}
+        header h1{font-size:18px;font-weight:600;} header h1 span{color:var(--red-accent);}
+        .header-stats{display:flex;gap:16px;font-size:12px;}
+        .stat-item{background:var(--surface2);padding:6px 12px;border-radius:6px;border:1px solid var(--border);}
+        .stat-item strong{color:var(--green);margin-left:4px;}
+
+        .app-container{display:grid;grid-template-columns:1fr 400px;height:calc(100vh - 73px);}
+
+        .canvas-area{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow:hidden;background:var(--bg);}
+
+        /* Folder Selection Mode */
+        .folder-mode{width:100%;height:100%;border:2px dashed var(--border);border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;cursor:pointer;transition:all 0.3s;}
+        .folder-mode:hover{border-color:var(--red-accent);background:rgba(255,59,59,0.03);}
+        .folder-mode.hidden{display:none;}
+        .folder-icon{width:80px;height:80px;border:2px solid var(--border);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:36px;}
+        .folder-text{font-size:16px;font-weight:600;color:var(--text);}
+        .folder-sub{font-size:12px;color:var(--text-dim);text-align:center;max-width:400px;}
+        #folderInput{display:none;}
+
+        /* Batch Processing Mode */
+        .batch-mode{width:100%;max-width:600px;display:none;flex-direction:column;gap:20px;padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:16px;}
+        .batch-mode.active{display:flex;}
+        .batch-header{text-align:center;}
+        .batch-header h2{font-size:20px;margin-bottom:8px;}
+        .batch-header p{font-size:13px;color:var(--text-dim);}
+        .progress-container{background:var(--surface2);border-radius:12px;padding:20px;border:1px solid var(--border);}
+        .progress-label{display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;}
+        .progress-bar-bg{height:12px;background:var(--bg);border-radius:6px;overflow:hidden;}
+        .progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--red-accent),var(--green));transition:width 0.3s;border-radius:6px;}
+        .current-image{margin-top:16px;font-size:12px;color:var(--text-dim);text-align:center;font-family:'JetBrains Mono',monospace;}
+        .batch-controls{display:flex;gap:12px;}
+
+        /* Verification Mode */
+        .canvas-wrapper{display:none;position:relative;max-width:100%;max-height:calc(100vh - 230px);}
+        .canvas-wrapper.active{display:inline-block;}
+        #mainCanvas{display:block;max-width:100%;max-height:calc(100vh - 230px);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+        #overlayCanvas{position:absolute;top:0;left:0;width:100%;height:100%;border-radius:8px;cursor:crosshair;}
+
+        .navigation-bar{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 18px;z-index:10;box-shadow:0 4px 20px rgba(0,0,0,0.3);}
+        .navigation-bar.active{display:flex;}
+
+        .btn{padding:8px 18px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
+        .btn:hover{border-color:var(--text-dim);background:var(--border);}
+        .btn:disabled{opacity:0.5;cursor:not-allowed;}
+        .btn-primary{background:var(--red-accent);border-color:var(--red-accent);color:#fff;}
+        .btn-primary:hover:not(:disabled){background:#e83232;box-shadow:0 0 20px var(--red-glow);}
+        .btn-success{background:var(--green);border-color:var(--green);color:#000;}
+        .btn-success:hover:not(:disabled){background:#2ee078;}
+        .btn-sm{padding:6px 12px;font-size:11px;}
+
+        .page-indicator{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;padding:0 12px;color:var(--text);}
+
+        .sidebar{border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden;}
+        .sidebar-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+        .sidebar-header h2{font-size:14px;font-weight:600;}
+        .badge{background:var(--red-accent);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
+        .badge.success{background:var(--green);color:#000;}
+        .badge.warning{background:var(--yellow);color:#000;}
+
+        /* Settings Section */
+        .settings-section{padding:16px 20px;border-bottom:1px solid var(--border);}
+        .settings-section h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:14px;}
+        .preset-buttons{display:flex;gap:8px;margin-bottom:12px;}
+        .btn-preset{flex:1;padding:8px;font-size:11px;text-align:center;}
+        .btn-preset.active{background:var(--red-accent);border-color:var(--red-accent);color:#fff;}
+        .setting-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+        .setting-row:last-child{margin-bottom:0;}
+        .setting-label{font-size:12px;}
+        .setting-value{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red-accent);background:rgba(255,59,59,0.08);padding:3px 8px;border-radius:5px;min-width:44px;text-align:center;}
+        input[type="range"]{width:100px;accent-color:var(--red-accent);cursor:pointer;}
+
+        /* Results Area */
+        .results-area{flex:1;overflow-y:auto;padding:8px;}
+        .results-area::-webkit-scrollbar{width:5px;}
+        .results-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+        .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:12px;gap:6px;text-align:center;padding:32px;}
+        .empty-state-icon{font-size:32px;opacity:0.3;margin-bottom:6px;}
+
+        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;position:relative;}
+        @keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .rect-card:hover,.rect-card.active{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
+        .rect-card.selected{border-color:var(--yellow);border-width:2px;background:rgba(255,187,59,0.08);}
+        .rect-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+        .rect-card-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;}
+        .rect-card-title .dot{width:7px;height:7px;background:var(--red-accent);border-radius:50%;box-shadow:0 0 6px var(--red-glow);}
+        .rect-card-size{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);}
+        .rect-card-confidence{position:absolute;top:10px;right:10px;font-size:10px;font-weight:600;color:var(--green);}
+        .rect-coords{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+        .coord-item{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);background:var(--bg);padding:5px 8px;border-radius:5px;}
+        .coord-item span{color:var(--green);}
+        .rect-actions{display:flex;gap:4px;margin-top:8px;}
+
+        /* Sidebar Footer */
+        .sidebar-footer{padding:14px 20px;border-top:1px solid var(--border);display:none;flex-direction:column;gap:8px;}
+        .sidebar-footer.active{display:flex;}
+        .btn-full{width:100%;justify-content:center;}
+        .export-stats{font-size:11px;color:var(--text-dim);text-align:center;margin-bottom:8px;padding:8px;background:var(--surface2);border-radius:6px;}
+
+        .toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#000;font-size:12px;font-weight:600;padding:12px 24px;border-radius:10px;transform:translateY(100px);opacity:0;transition:all 0.3s;z-index:100;box-shadow:0 4px 20px rgba(59,255,138,0.3);}
+        .toast.show{transform:translateY(0);opacity:1;}
+        .toast.error{background:var(--red-accent);color:#fff;}
+
+        .processing{position:absolute;inset:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:20;border-radius:8px;flex-direction:column;gap:12px;}
+        .processing.active{display:flex;}
+        .processing span{font-size:14px;color:var(--text);}
+        .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--red-accent);border-radius:50%;animation:spin 0.8s linear infinite;}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        @media(max-width:1200px){.app-container{grid-template-columns:1fr;grid-template-rows:1fr auto;}.sidebar{max-height:50vh;}}
+    </style>
+</head>
+<body>
+<header>
+    <div class="header-left">
+        <div class="logo-icon"></div>
+        <h1>워크북 <span>빨간 박스</span> 좌표 추출 및 검증</h1>
+    </div>
+    <div class="header-stats">
+        <div class="stat-item">처리: <strong id="processedCount">0</strong> / <strong id="totalCount">0</strong></div>
+        <div class="stat-item">검증: <strong id="verifiedCount">0</strong></div>
+        <div class="stat-item">총 박스: <strong id="totalBoxCount">0</strong></div>
+    </div>
+</header>
+
+<div class="app-container">
+    <div class="canvas-area">
+        <!-- Folder Selection Mode -->
+        <div class="folder-mode" id="folderMode">
+            <div class="folder-icon">📁</div>
+            <div class="folder-text">워크북 이미지 폴더 선택</div>
+            <div class="folder-sub">56장의 워크북 이미지가 있는 폴더를 선택하세요<br>자동으로 빨간 박스를 감지합니다</div>
+            <button class="btn btn-primary" style="margin-top:12px;" onclick="document.getElementById('folderInput').click()">📁 폴더 선택하기</button>
+        </div>
+        <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none;">
+
+        <!-- Batch Processing Mode -->
+        <div class="batch-mode" id="batchMode">
+            <div class="batch-header">
+                <h2>배치 처리 중...</h2>
+                <p>워크북 이미지를 순차적으로 분석하고 있습니다</p>
+            </div>
+            <div class="progress-container">
+                <div class="progress-label">
+                    <span>진행률</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
+                </div>
+                <div class="current-image" id="currentImageName">대기 중...</div>
+            </div>
+            <div class="batch-controls">
+                <button class="btn btn-primary btn-full" id="startBatchBtn">🔍 배치 감지 시작</button>
+            </div>
+        </div>
+
+        <!-- Verification Mode -->
+        <div class="canvas-wrapper" id="canvasWrapper">
+            <canvas id="mainCanvas"></canvas>
+            <canvas id="overlayCanvas"></canvas>
+            <div class="processing" id="proc">
+                <div class="spinner"></div>
+                <span>감지 중...</span>
+            </div>
+        </div>
+
+        <div class="navigation-bar" id="navigationBar">
+            <button class="btn" id="prevBtn">◀ 이전</button>
+            <span class="page-indicator" id="pageIndicator">0 / 0</span>
+            <button class="btn" id="nextBtn">다음 ▶</button>
+            <button class="btn" id="detectBtn">🔍 재감지</button>
+            <button class="btn btn-success" id="markVerifiedBtn">✓ 검증완료</button>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2 id="sidebarTitle">감지 설정</h2>
+            <div class="badge" id="rectCountBadge">0</div>
+        </div>
+
+        <div class="settings-section">
+            <h3>워크북 프리셋</h3>
+            <div class="preset-buttons">
+                <button class="btn btn-preset btn-sm active" data-preset="workbook">워크북</button>
+                <button class="btn btn-preset btn-sm" data-preset="card">카드</button>
+                <button class="btn btn-preset btn-sm" data-preset="custom">커스텀</button>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">최소 영역</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="range" id="minArea" min="100" max="5000" value="500" step="100">
+                    <span class="setting-value" id="minAreaVal">500</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">채도 하한</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="range" id="satThresh" min="30" max="220" value="100" step="5">
+                    <span class="setting-value" id="satThreshVal">100</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label">밝기 하한</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="range" id="valThresh" min="30" max="220" value="100" step="5">
+                    <span class="setting-value" id="valThreshVal">100</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="results-area" id="resultsArea">
+            <div class="empty-state">
+                <div class="empty-state-icon">📁</div>
+                워크북 폴더를 선택하여<br>시작하세요
+            </div>
+        </div>
+
+        <div class="sidebar-footer" id="sidebarFooter">
+            <div class="export-stats" id="exportStats">
+                검증 완료 후 데이터를 다운로드할 수 있습니다
+            </div>
+            <button class="btn btn-full btn-success" id="exportJsonBtn">💾 JSON 다운로드</button>
+            <button class="btn btn-full" id="exportCsvBtn">📄 CSV 다운로드</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// GLOBAL STATE
+// ═══════════════════════════════════════════════════════════
+let imageFiles = [];
+let currentImageIndex = 0;
+let allResults = {}; // {filename: {image, rects, status, verified}}
+let selectedRectIndex = -1;
+let overlayVisible = true;
+let isEditMode = false;
+
+const $ = id => document.getElementById(id);
+
+// Canvas contexts
+const mainCanvas = $('mainCanvas');
+const overlayCanvas = $('overlayCanvas');
+const mainCtx = mainCanvas.getContext('2d', {willReadFrequently: true});
+const overlayCtx = overlayCanvas.getContext('2d');
+
+// ═══════════════════════════════════════════════════════════
+// DETECTION ALGORITHM (from original index.html)
+// ═══════════════════════════════════════════════════════════
+function rgbToHsv(r, g, b) {
+    const rf = r / 255, gf = g / 255, bf = b / 255;
+    const mx = Math.max(rf, gf, bf), mn = Math.min(rf, gf, bf), d = mx - mn;
+    let h = 0;
+    if (d !== 0) {
+        if (mx === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) / 6;
+        else if (mx === gf) h = ((bf - rf) / d + 2) / 6;
+        else h = ((rf - gf) / d + 4) / 6;
+    }
+    return [h * 180, mx === 0 ? 0 : (d / mx) * 255, mx * 255];
+}
+
+function createRedMask(imgData, satMin, valMin) {
+    const {width: w, height: h, data} = imgData;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0; i < data.length; i += 4) {
+        const [hue, s, v] = rgbToHsv(data[i], data[i + 1], data[i + 2]);
+        if ((hue <= 8 || hue >= 172) && s >= satMin && v >= valMin) mask[i >> 2] = 255;
+    }
+    return mask;
+}
+
+function findContourBoundingBoxes(mask, w, h, minArea) {
+    const visited = new Uint8Array(w * h);
+    const results = [];
+
+    for (let sy = 0; sy < h; sy++) {
+        for (let sx = 0; sx < w; sx++) {
+            const sidx = sy * w + sx;
+            if (mask[sidx] === 0 || visited[sidx]) continue;
+
+            let minX = sx, maxX = sx, minY = sy, maxY = sy;
+            let count = 0;
+            const queue = [sidx];
+            visited[sidx] = 1;
+
+            while (queue.length > 0) {
+                const idx = queue.pop();
+                const cx = idx % w, cy = (idx - cx) / w;
+                count++;
+                if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+                if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+
+                const neighbors = [idx - 1, idx + 1, idx - w, idx + w];
+                for (const ni of neighbors) {
+                    if (ni >= 0 && ni < w * h && mask[ni] === 255 && !visited[ni]) {
+                        const nx = ni % w;
+                        if (Math.abs(nx - (idx % w)) <= 1) {
+                            visited[ni] = 1;
+                            queue.push(ni);
+                        }
+                    }
+                }
+            }
+
+            const bw = maxX - minX + 1, bh = maxY - minY + 1;
+            const area = bw * bh;
+            if (area >= minArea) {
+                const aspect = Math.max(bw, bh) / Math.max(Math.min(bw, bh), 1);
+                if (aspect < 20) {
+                    results.push({x: minX, y: minY, width: bw, height: bh, area, pixelCount: count});
+                }
+            }
+        }
+    }
+    return results;
+}
+
+function mergeOverlapping(rects) {
+    if (rects.length <= 1) return rects;
+    rects.sort((a, b) => b.area - a.area);
+    const used = new Set(), merged = [];
+    for (let i = 0; i < rects.length; i++) {
+        if (used.has(i)) continue;
+        let {x, y, width: w, height: h} = rects[i];
+        let x2 = x + w, y2 = y + h;
+        for (let j = i + 1; j < rects.length; j++) {
+            if (used.has(j)) continue;
+            const r = rects[j], rx2 = r.x + r.width, ry2 = r.y + r.height;
+            const ox = Math.max(0, Math.min(x2, rx2) - Math.max(x, r.x));
+            const oy = Math.max(0, Math.min(y2, ry2) - Math.max(y, r.y));
+            const smallerArea = Math.min(w * h, r.width * r.height);
+            if (ox * oy / smallerArea > 0.3) {
+                x = Math.min(x, r.x); y = Math.min(y, r.y);
+                x2 = Math.max(x2, rx2); y2 = Math.max(y2, ry2);
+                w = x2 - x; h = y2 - y; used.add(j);
+            }
+        }
+        merged.push({x, y, width: x2 - x, height: y2 - y, area: (x2 - x) * (y2 - y)});
+    }
+    return merged;
+}
+
+function detectRectangles(canvas, satMin, valMin, minArea) {
+    const w = canvas.width, h = canvas.height;
+    const imgData = mainCtx.getImageData(0, 0, w, h);
+    const mask = createRedMask(imgData, satMin, valMin);
+    let comps = findContourBoundingBoxes(mask, w, h, minArea);
+    let rects = mergeOverlapping(comps);
+    rects.sort((a, b) => b.area - a.area);
+    rects.forEach((r, i) => {
+        r.id = i + 1;
+        r.confidence = Math.min(0.99, r.pixelCount / r.area);
+    });
+    return rects;
+}
+
+// ═══════════════════════════════════════════════════════════
+// FOLDER LOADING
+// ═══════════════════════════════════════════════════════════
+$('folderInput').addEventListener('change', function(e) {
+    const files = Array.from(e.target.files).filter(f => /\.(png|jpg|jpeg)$/i.test(f.name));
+    if (files.length === 0) {
+        showToast('이미지 파일을 찾을 수 없습니다', 'error');
+        return;
+    }
+
+    imageFiles = files.sort((a, b) => a.name.localeCompare(b.name));
+    $('totalCount').textContent = imageFiles.length;
+
+    $('folderMode').classList.add('hidden');
+    $('batchMode').classList.add('active');
+
+    showToast(`${imageFiles.length}개 이미지 로드 완료!`);
+});
+
+// ═══════════════════════════════════════════════════════════
+// BATCH PROCESSING
+// ═══════════════════════════════════════════════════════════
+$('startBatchBtn').addEventListener('click', async function() {
+    this.disabled = true;
+
+    const satMin = +$('satThresh').value;
+    const valMin = +$('valThresh').value;
+    const minArea = +$('minArea').value;
+
+    for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        currentImageIndex = i;
+
+        // Update progress
+        const progress = ((i + 1) / imageFiles.length * 100).toFixed(0);
+        $('progressBar').style.width = progress + '%';
+        $('progressPercent').textContent = progress + '%';
+        $('currentImageName').textContent = `처리 중: ${file.name}`;
+        $('processedCount').textContent = i + 1;
+
+        // Load and detect
+        await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    mainCanvas.width = img.naturalWidth;
+                    mainCanvas.height = img.naturalHeight;
+                    mainCtx.drawImage(img, 0, 0);
+
+                    const rects = detectRectangles(mainCanvas, satMin, valMin, minArea);
+
+                    allResults[file.name] = {
+                        image: img,
+                        rects: rects,
+                        status: rects.length === 0 ? 'warning' : 'pending',
+                        verified: false,
+                        filename: file.name
+                    };
+
+                    resolve();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Small delay for UI update
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    // Batch complete
+    $('batchMode').classList.remove('active');
+    $('canvasWrapper').classList.add('active');
+    $('navigationBar').classList.add('active');
+    $('sidebarFooter').classList.add('active');
+
+    currentImageIndex = 0;
+    loadCurrentImage();
+    updateStats();
+
+    showToast('배치 처리 완료! 검증을 시작하세요');
+});
+
+// ═══════════════════════════════════════════════════════════
+// IMAGE NAVIGATION
+// ═══════════════════════════════════════════════════════════
+function loadCurrentImage() {
+    if (imageFiles.length === 0) return;
+
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+
+    if (!result) return;
+
+    // Set canvas size
+    mainCanvas.width = result.image.naturalWidth;
+    mainCanvas.height = result.image.naturalHeight;
+    overlayCanvas.width = result.image.naturalWidth;
+    overlayCanvas.height = result.image.naturalHeight;
+
+    // Draw image
+    mainCtx.drawImage(result.image, 0, 0);
+
+    // Draw overlay
+    drawOverlay();
+
+    // Update UI
+    $('pageIndicator').textContent = `${currentImageIndex + 1} / ${imageFiles.length}`;
+    $('rectCountBadge').textContent = result.rects.length;
+    $('sidebarTitle').textContent = file.name;
+
+    // Update verified button
+    if (result.verified) {
+        $('markVerifiedBtn').textContent = '✓ 검증완료';
+        $('markVerifiedBtn').classList.add('btn-success');
+    } else {
+        $('markVerifiedBtn').textContent = '검증완료 표시';
+        $('markVerifiedBtn').classList.remove('btn-success');
+    }
+
+    // Render results
+    renderResults();
+
+    selectedRectIndex = -1;
+}
+
+$('prevBtn').addEventListener('click', () => {
+    if (currentImageIndex > 0) {
+        currentImageIndex--;
+        loadCurrentImage();
+    }
+});
+
+$('nextBtn').addEventListener('click', () => {
+    if (currentImageIndex < imageFiles.length - 1) {
+        currentImageIndex++;
+        loadCurrentImage();
+    }
+});
+
+// ═══════════════════════════════════════════════════════════
+// OVERLAY DRAWING (IMPROVED VISIBILITY)
+// ═══════════════════════════════════════════════════════════
+function drawOverlay() {
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    if (!overlayVisible) return;
+
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    if (!result) return;
+
+    result.rects.forEach((r, i) => {
+        const isSelected = i === selectedRectIndex;
+
+        // Fill - 더 진하게
+        overlayCtx.fillStyle = isSelected ? 'rgba(255,187,59,0.25)' : 'rgba(0,255,100,0.18)';
+        overlayCtx.fillRect(r.x, r.y, r.width, r.height);
+
+        // Stroke - 더 굵고 명확하게
+        overlayCtx.strokeStyle = isSelected ? '#ffbb3b' : '#00ff66';
+        overlayCtx.lineWidth = isSelected ? 5 : 3;
+        overlayCtx.setLineDash(isSelected ? [] : [12, 6]);
+        overlayCtx.strokeRect(r.x, r.y, r.width, r.height);
+        overlayCtx.setLineDash([]);
+
+        // 선택된 박스 외곽선 추가 강조
+        if (isSelected) {
+            overlayCtx.strokeStyle = 'rgba(255,187,59,0.5)';
+            overlayCtx.lineWidth = 10;
+            overlayCtx.strokeRect(r.x, r.y, r.width, r.height);
+        }
+
+        // Label - 더 크고 명확하게
+        const label = `#${i + 1}  ${r.width}×${r.height}`;
+        overlayCtx.font = isSelected ? 'bold 16px JetBrains Mono,monospace' : 'bold 14px JetBrains Mono,monospace';
+        const tw = overlayCtx.measureText(label).width;
+        overlayCtx.fillStyle = isSelected ? '#ffbb3b' : '#00ff66';
+        overlayCtx.fillRect(r.x, r.y - 26, tw + 12, 24);
+        overlayCtx.fillStyle = '#000';
+        overlayCtx.fillText(label, r.x + 6, r.y - 7);
+
+        // Corner dots - 더 크게
+        overlayCtx.fillStyle = isSelected ? '#ffbb3b' : '#00ff66';
+        const cornerSize = isSelected ? 8 : 6;
+        [[r.x, r.y], [r.x + r.width, r.y], [r.x, r.y + r.height], [r.x + r.width, r.y + r.height]].forEach(([cx, cy]) => {
+            overlayCtx.beginPath();
+            overlayCtx.arc(cx, cy, cornerSize, 0, Math.PI * 2);
+            overlayCtx.fill();
+            // 선택된 박스의 코너에 외곽선 추가
+            if (isSelected) {
+                overlayCtx.strokeStyle = '#fff';
+                overlayCtx.lineWidth = 2;
+                overlayCtx.stroke();
+            }
+        });
+    });
+}
+
+// ═══════════════════════════════════════════════════════════
+// RESULTS RENDERING
+// ═══════════════════════════════════════════════════════════
+function renderResults() {
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+
+    if (!result || result.rects.length === 0) {
+        $('resultsArea').innerHTML = `<div class="empty-state"><div class="empty-state-icon">🔍</div>빨간색 박스를 찾지 못했습니다<br><small style="margin-top:6px;opacity:0.6">설정을 조정하거나 재감지하세요</small></div>`;
+        return;
+    }
+
+    $('resultsArea').innerHTML = result.rects.map((r, i) => `
+        <div class="rect-card ${i === selectedRectIndex ? 'selected' : ''}" data-i="${i}">
+            <div class="rect-card-confidence">${(r.confidence * 100).toFixed(0)}%</div>
+            <div class="rect-card-header">
+                <div class="rect-card-title"><span class="dot"></span>박스 #${i + 1}</div>
+                <div class="rect-card-size">${r.width} × ${r.height}px</div>
+            </div>
+            <div class="rect-coords">
+                <div class="coord-item">X: <span>${r.x}</span></div>
+                <div class="coord-item">Y: <span>${r.y}</span></div>
+                <div class="coord-item">W: <span>${r.width}</span></div>
+                <div class="coord-item">H: <span>${r.height}</span></div>
+            </div>
+            <div class="rect-actions">
+                <button class="btn btn-sm" onclick="deleteRect(${i})">삭제</button>
+            </div>
+        </div>`).join('');
+
+    // Add click handlers
+    document.querySelectorAll('.rect-card').forEach(c => c.addEventListener('click', function(e) {
+        if (e.target.tagName === 'BUTTON') return;
+        selectedRectIndex = +this.dataset.i;
+        drawOverlay();
+        renderResults();
+    }));
+}
+
+function deleteRect(index) {
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    result.rects.splice(index, 1);
+    result.rects.forEach((r, i) => r.id = i + 1);
+    selectedRectIndex = -1;
+    drawOverlay();
+    renderResults();
+    updateStats();
+    showToast('박스가 삭제되었습니다');
+}
+
+// ═══════════════════════════════════════════════════════════
+// VERIFICATION
+// ═══════════════════════════════════════════════════════════
+$('markVerifiedBtn').addEventListener('click', function() {
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    result.verified = !result.verified;
+    result.status = result.verified ? 'verified' : 'pending';
+    loadCurrentImage();
+    updateStats();
+    showToast(result.verified ? '검증 완료로 표시됨' : '검증 취소됨');
+});
+
+$('detectBtn').addEventListener('click', function() {
+    $('proc').classList.add('active');
+
+    setTimeout(() => {
+        const satMin = +$('satThresh').value;
+        const valMin = +$('valThresh').value;
+        const minArea = +$('minArea').value;
+
+        const file = imageFiles[currentImageIndex];
+        const result = allResults[file.name];
+
+        mainCanvas.width = result.image.naturalWidth;
+        mainCanvas.height = result.image.naturalHeight;
+        mainCtx.drawImage(result.image, 0, 0);
+
+        result.rects = detectRectangles(mainCanvas, satMin, valMin, minArea);
+        result.status = result.rects.length === 0 ? 'warning' : 'pending';
+        result.verified = false;
+
+        drawOverlay();
+        renderResults();
+        updateStats();
+
+        $('proc').classList.remove('active');
+        showToast('재감지 완료!');
+    }, 100);
+});
+
+// ═══════════════════════════════════════════════════════════
+// STATS UPDATE
+// ═══════════════════════════════════════════════════════════
+function updateStats() {
+    const verified = Object.values(allResults).filter(r => r.verified).length;
+    const totalBoxes = Object.values(allResults).reduce((sum, r) => sum + r.rects.length, 0);
+
+    $('verifiedCount').textContent = verified;
+    $('totalBoxCount').textContent = totalBoxes;
+
+    const stats = `검증 완료: ${verified}/${imageFiles.length} | 총 박스: ${totalBoxes}개`;
+    $('exportStats').textContent = stats;
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════
+$('exportJsonBtn').addEventListener('click', function() {
+    const exportData = {
+        project: '도요새 중국어 워크북',
+        totalImages: imageFiles.length,
+        exportDate: new Date().toISOString(),
+        images: imageFiles.map((file, idx) => {
+            const result = allResults[file.name];
+            return {
+                filename: file.name,
+                pageNumber: idx + 1,
+                status: result.status,
+                verified: result.verified,
+                dimensions: {
+                    width: result.image.naturalWidth,
+                    height: result.image.naturalHeight
+                },
+                touchAreas: result.rects.map(r => ({
+                    id: r.id,
+                    x: r.x,
+                    y: r.y,
+                    width: r.width,
+                    height: r.height,
+                    x2: r.x + r.width,
+                    y2: r.y + r.height,
+                    confidence: r.confidence
+                }))
+            };
+        })
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'workbook_coordinates.json';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showToast('JSON 파일이 다운로드되었습니다!');
+});
+
+$('exportCsvBtn').addEventListener('click', function() {
+    let csv = '페이지,파일명,박스ID,X,Y,Width,Height,X2,Y2,신뢰도,검증상태\n';
+
+    imageFiles.forEach((file, idx) => {
+        const result = allResults[file.name];
+        result.rects.forEach(r => {
+            csv += `${idx + 1},${file.name},${r.id},${r.x},${r.y},${r.width},${r.height},${r.x + r.width},${r.y + r.height},${r.confidence.toFixed(2)},${result.verified ? '검증완료' : '미검증'}\n`;
+        });
+    });
+
+    const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'workbook_coordinates.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showToast('CSV 파일이 다운로드되었습니다!');
+});
+
+// ═══════════════════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════════════════
+['minArea', 'satThresh', 'valThresh'].forEach(id => {
+    $(id).addEventListener('input', () => {
+        $(id + 'Val').textContent = $(id).value;
+    });
+});
+
+// Presets
+document.querySelectorAll('.btn-preset').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+
+        const preset = this.dataset.preset;
+        if (preset === 'workbook') {
+            $('minArea').value = 500;
+            $('satThresh').value = 100;
+            $('valThresh').value = 100;
+        } else if (preset === 'card') {
+            $('minArea').value = 800;
+            $('satThresh').value = 120;
+            $('valThresh').value = 120;
+        }
+
+        ['minArea', 'satThresh', 'valThresh'].forEach(id => {
+            $(id + 'Val').textContent = $(id).value;
+        });
+    });
+});
+
+// ═══════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════
+function showToast(msg, type = 'success') {
+    const toast = $('toast');
+    toast.textContent = msg;
+    toast.className = 'toast' + (type === 'error' ? ' error' : '');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('keydown', function(e) {
+    if (imageFiles.length === 0) return;
+
+    if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
+        currentImageIndex--;
+        loadCurrentImage();
+    } else if (e.key === 'ArrowRight' && currentImageIndex < imageFiles.length - 1) {
+        currentImageIndex++;
+        loadCurrentImage();
+    } else if (e.key === ' ') {
+        e.preventDefault();
+        $('markVerifiedBtn').click();
+    } else if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        $('detectBtn').click();
+    } else if (e.key === 'Delete' && selectedRectIndex >= 0) {
+        e.preventDefault();
+        deleteRect(selectedRectIndex);
+    }
+});
+
+// ═══════════════════════════════════════════════════════════
+// DRAG & RESIZE FUNCTIONALITY
+// ═══════════════════════════════════════════════════════════
+let isDragging = false;
+let isResizing = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let resizeCorner = null; // 'tl', 'tr', 'bl', 'br'
+let originalRect = null;
+
+// Canvas 좌표 계산 (스케일 보정)
+function getCanvasCoordinates(e) {
+    const rect = overlayCanvas.getBoundingClientRect();
+    const scaleX = overlayCanvas.width / rect.width;
+    const scaleY = overlayCanvas.height / rect.height;
+    return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+    };
+}
+
+// 코너 근처인지 확인
+function getNearCorner(x, y, rect) {
+    // 스케일을 고려한 threshold (캔버스 크기 대비)
+    const canvasRect = overlayCanvas.getBoundingClientRect();
+    const scale = overlayCanvas.width / canvasRect.width;
+    const threshold = 25 * scale; // 화면에서 25px 거리
+
+    const corners = {
+        tl: {x: rect.x, y: rect.y},
+        tr: {x: rect.x + rect.width, y: rect.y},
+        bl: {x: rect.x, y: rect.y + rect.height},
+        br: {x: rect.x + rect.width, y: rect.y + rect.height}
+    };
+
+    for (let [key, corner] of Object.entries(corners)) {
+        const dist = Math.sqrt((x - corner.x) ** 2 + (y - corner.y) ** 2);
+        if (dist < threshold) return key;
+    }
+    return null;
+}
+
+// 박스 내부인지 확인
+function isInsideRect(x, y, rect) {
+    return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+// Mouse Down
+overlayCanvas.addEventListener('mousedown', function(e) {
+    if (imageFiles.length === 0) return;
+
+    const {x, y} = getCanvasCoordinates(e);
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    if (!result) return;
+
+    // 선택된 박스가 있는지 확인
+    for (let i = result.rects.length - 1; i >= 0; i--) {
+        const rect = result.rects[i];
+        const corner = getNearCorner(x, y, rect);
+
+        if (corner) {
+            // 크기 조정 시작
+            isResizing = true;
+            resizeCorner = corner;
+            selectedRectIndex = i;
+            originalRect = {...rect};
+            dragStartX = x;
+            dragStartY = y;
+            drawOverlay();
+            renderResults();
+            overlayCanvas.style.cursor = 'nwse-resize';
+            return;
+        } else if (isInsideRect(x, y, rect)) {
+            // 이동 시작
+            isDragging = true;
+            selectedRectIndex = i;
+            originalRect = {...rect};
+            dragStartX = x;
+            dragStartY = y;
+            drawOverlay();
+            renderResults();
+            overlayCanvas.style.cursor = 'move';
+            return;
+        }
+    }
+
+    // 박스 선택 해제
+    selectedRectIndex = -1;
+    drawOverlay();
+    renderResults();
+});
+
+// Mouse Move
+overlayCanvas.addEventListener('mousemove', function(e) {
+    if (imageFiles.length === 0) return;
+
+    const {x, y} = getCanvasCoordinates(e);
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    if (!result) return;
+
+    if (isDragging && selectedRectIndex >= 0) {
+        // 박스 이동
+        const rect = result.rects[selectedRectIndex];
+        const dx = x - dragStartX;
+        const dy = y - dragStartY;
+
+        rect.x = Math.max(0, Math.min(originalRect.x + dx, overlayCanvas.width - rect.width));
+        rect.y = Math.max(0, Math.min(originalRect.y + dy, overlayCanvas.height - rect.height));
+
+        drawOverlay();
+        renderResults();
+    } else if (isResizing && selectedRectIndex >= 0) {
+        // 박스 크기 조정
+        const rect = result.rects[selectedRectIndex];
+        const dx = x - dragStartX;
+        const dy = y - dragStartY;
+
+        switch (resizeCorner) {
+            case 'tl': // Top-Left
+                rect.x = originalRect.x + dx;
+                rect.y = originalRect.y + dy;
+                rect.width = originalRect.width - dx;
+                rect.height = originalRect.height - dy;
+                break;
+            case 'tr': // Top-Right
+                rect.y = originalRect.y + dy;
+                rect.width = originalRect.width + dx;
+                rect.height = originalRect.height - dy;
+                break;
+            case 'bl': // Bottom-Left
+                rect.x = originalRect.x + dx;
+                rect.width = originalRect.width - dx;
+                rect.height = originalRect.height + dy;
+                break;
+            case 'br': // Bottom-Right
+                rect.width = originalRect.width + dx;
+                rect.height = originalRect.height + dy;
+                break;
+        }
+
+        // 최소 크기 제한
+        rect.width = Math.max(20, rect.width);
+        rect.height = Math.max(20, rect.height);
+        rect.area = rect.width * rect.height;
+
+        drawOverlay();
+        renderResults();
+    } else {
+        // 커서 변경 (hover 효과)
+        let cursorSet = false;
+        for (let rect of result.rects) {
+            const corner = getNearCorner(x, y, rect);
+            if (corner) {
+                overlayCanvas.style.cursor = 'nwse-resize';
+                cursorSet = true;
+                break;
+            } else if (isInsideRect(x, y, rect)) {
+                overlayCanvas.style.cursor = 'move';
+                cursorSet = true;
+                break;
+            }
+        }
+        if (!cursorSet) {
+            overlayCanvas.style.cursor = 'crosshair';
+        }
+    }
+});
+
+// Mouse Up
+overlayCanvas.addEventListener('mouseup', function(e) {
+    if (isDragging || isResizing) {
+        isDragging = false;
+        isResizing = false;
+        resizeCorner = null;
+        originalRect = null;
+
+        // 변경사항을 반영하여 검증 취소
+        const file = imageFiles[currentImageIndex];
+        const result = allResults[file.name];
+        if (result) {
+            result.verified = false;
+            result.status = 'pending';
+        }
+
+        updateStats();
+        showToast('박스가 수정되었습니다. 검증을 다시 진행하세요.');
+    }
+    overlayCanvas.style.cursor = 'crosshair';
+});
+
+// Mouse Leave
+overlayCanvas.addEventListener('mouseleave', function(e) {
+    isDragging = false;
+    isResizing = false;
+    resizeCorner = null;
+    originalRect = null;
+    overlayCanvas.style.cursor = 'crosshair';
+});
+</script>
+</body>
+</html>
