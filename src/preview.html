@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, user-scalable=no">
+    <title>미리보기_해설</title>
+    <link href="https://hangeul.pstatic.net/hangeul_static/css/nanum-square.css" rel="stylesheet">
+    <link href="https://hangeul.pstatic.net/hangeul_static/css/nanum-myeongjo.css" rel="stylesheet">
+    <link href="../../dist/css/moon_preview.css" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'NanumSquareRoundEB';
+            margin: 0;
+            padding: 0;
+            position: relative;
+            box-sizing: border-box;
+            list-style: none;
+        }
+
+        body {
+            background-color: #333;
+        }
+
+        section {
+            width: 100%;
+            height: 728px;
+            overflow: hidden;
+            display: block;
+            background: #fff;
+            border-collapse: collapse;
+            border-spacing: 0;
+        }
+
+        section::after {
+            content: "";
+            display: block;
+            clear: both;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .wrap {
+            width: 100%;
+            height: 100vh;
+            max-width: 1280px;
+            max-height: 800px;
+            overflow: hidden;
+        }
+
+        header {
+            width: 100%;
+            height: 72px;
+        }
+
+        /* 전체 스크롤바 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            /* 모바일처럼 얇게 */
+            height: 6px;
+        }
+
+        /* 스크롤바 트랙 (배경) */
+        ::-webkit-scrollbar-track {
+            background: transparent;
+            background-clip: padding-box;
+        }
+
+        /* 스크롤바 핸들 */
+        ::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            border-bottom: 4px solid #fff;
+        }
+
+        .app_preview {
+            width: 1044px;
+            height: 600px;
+            margin: 10px auto;
+        }
+
+        .app_preview .lms_img {
+            width: 1044px;
+            height: 600px;
+        }
+
+        .app_preview .lms_img img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .drag_area {
+            width: 1044px;
+            height: 600px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .drag_box {
+            width: 138px;
+            height: 138px;
+            background: rgba(255, 0, 0, 0.3);
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: move;
+            border-radius: 4px;
+            resize: both;
+            overflow: auto;
+        }
+
+        .info-overlay {
+            position: absolute;
+            z-index: 1;
+            bottom: 0;
+            right: 0;
+            background: #000;
+            color: #fff;
+            font-size: 10px;
+        }
+
+        .drag_box.on {
+            background: rgba(72, 110, 225, 0.4);
+        }
+
+        .header_controls {
+            padding: 10px;
+            background: #fff;
+            border-bottom: 1px solid #ddd;
+            z-index: 100;
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .header_controls .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            background: #f9f9f9;
+        }
+
+        .header_controls button {
+            padding: 5px 10px;
+            background: #486ee1;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .header_controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .dir-status {
+            font-size: 12px;
+            font-weight: bold;
+            color: #d9534f;
+        }
+
+        .dir-status.success {
+            color: #5cb85c;
+        }
+    </style>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- JSZip & XLSX 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+
+<body>
+    <!-- 통합 파일 로드 컨트롤 -->
+    <div class="header_controls">
+        <div class="control-group">
+            <span style="font-size:13px; font-weight:bold; color:#e02424;">1. lms 저장 폴더 권한:</span>
+            <button id="btnSelectDir">폴더 선택</button>
+            <span id="dirStatus" class="dir-status">선택 안됨</span>
+        </div>
+
+        <div class="control-group">
+            <span style="font-size:13px; font-weight:bold;">2. 이미지(ZIP/폴더) 등록:</span>
+            <input type="file" id="mediaFileInput" accept=".zip,image/png,image/jpeg" multiple />
+            <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none;" />
+            <button onclick="document.getElementById('folderInput').click()">폴더 데이터 업로드</button>
+        </div>
+
+        <div class="control-group">
+            <span style="font-size:13px; font-weight:bold;">3. 좌표 (JSON/XLSX):</span>
+            <input type="file" id="coordFileInput" accept=".json,.xlsx" />
+        </div>
+
+        <div class="control-group">
+            <select id="pageSelect" style="display:none; padding:5px;"></select>
+        </div>
+    </div>
+    <div class="wrap">
+        <section class="app_preview">
+            <!-- section_01 : LMS에 등록된 이미지 불러오는 영역 -->
+            <div class="lms_img">
+                <img src="" alt="LMS에 등록된 이미지">
+            </div>
+            <!-- section_02 : 드래그 영역 -->
+            <div class="drag_area">
+                <!-- 드래그 박스 -->
+                <div class="drag_box">
+                    <div class="info-overlay"></div>
+                </div>
+                <!-- //드래그 박스 -->
+            </div>
+            <!-- //section_02 : 드래그 영역 -->
+        </section>
+    </div>
+    <script>
+        const area = document.querySelector('.drag_area');
+        const lmsImg = document.querySelector('.lms_img img');
+        const pageSelect = document.getElementById('pageSelect');
+
+        // File System Directory Handle
+        let lmsDirHandle = null;
+
+        let loadedCoordData = null; // 파싱된 JSON/Excel 데이터
+        let loadedImages = {}; // { "filename.png": Blob/File }
+        let objectUrls = {}; // 메모리 해제를 위한 blob url 저장소
+
+        // ResizeObserver
+        const ro = new ResizeObserver(entries => {
+            for (let ent of entries) {
+                const box = ent.target;
+                let x = Math.max(0, Math.min(box.offsetLeft, area.clientWidth - box.offsetWidth));
+                let y = Math.max(0, Math.min(box.offsetTop, area.clientHeight - box.offsetHeight));
+                box.style.left = x + 'px';
+                box.style.top = y + 'px';
+                updateInfo(box);
+            }
+        });
+
+        let activeBox = null;
+        let offsetX = 0, offsetY = 0;
+        const HANDLE_SIZE = 16;
+
+        // 초기 박스들 바인딩
+        const initialBoxes = Array.from(area.querySelectorAll('.drag_box'));
+        initialBoxes.forEach(box => {
+            ro.observe(box);
+            bindBoxEvents(box);
+            updateInfo(box);
+        });
+
+        // ============================================
+        // 1. 디렉토리 권한 & 파일 저장 공통 함수
+        // ============================================
+        document.getElementById('btnSelectDir').addEventListener('click', async () => {
+            try {
+                lmsDirHandle = await window.showDirectoryPicker();
+                const statusEl = document.getElementById('dirStatus');
+                statusEl.textContent = lmsDirHandle.name + " (권한 획득)";
+                statusEl.classList.add('success');
+            } catch (err) {
+                console.error("디렉토리 권한 오류:", err);
+            }
+        });
+
+        async function saveFileToLmsDir(filename, blobOrFile) {
+            if (!lmsDirHandle) return;
+            try {
+                const fileHandle = await lmsDirHandle.getFileHandle(filename, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(blobOrFile);
+                await writable.close();
+            } catch (err) {
+                console.error(`Save error for ${filename}:`, err);
+            }
+        }
+
+        function getImageUrl(filename) {
+            if (objectUrls[filename]) return objectUrls[filename];
+            if (loadedImages[filename]) {
+                const url = URL.createObjectURL(loadedImages[filename]);
+                objectUrls[filename] = url;
+                return url;
+            }
+            return '';
+        }
+
+        // ============================================
+        // 2. 미디어 파일(이미지, ZIP) 등록
+        // ============================================
+        document.getElementById('mediaFileInput').addEventListener('change', async function (e) {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            for (let file of files) {
+                if (file.name.endsWith('.zip')) {
+                    try {
+                        const zip = await JSZip.loadAsync(file);
+                        let count = 0;
+                        zip.forEach(async (relativePath, zipEntry) => {
+                            if (!zipEntry.dir && (relativePath.match(/\.(png|jpe?g)$/i))) {
+                                const filename = relativePath.split('/').pop();
+                                const blob = await zipEntry.async("blob");
+                                loadedImages[filename] = blob;
+                                await saveFileToLmsDir(filename, blob);
+                                count++;
+                            }
+                        });
+                        setTimeout(() => alert(`ZIP 해제 완료. 이미지 로드 중...`), 500);
+                    } catch (err) {
+                        alert('ZIP 처리 오류: ' + err.message);
+                    }
+                } else if (file.type.startsWith('image/')) {
+                    loadedImages[file.name] = file;
+                    await saveFileToLmsDir(file.name, file);
+                }
+            }
+        });
+
+        document.getElementById('folderInput').addEventListener('change', async function (e) {
+            const files = e.target.files;
+            if (!files.length) return;
+            let count = 0;
+
+            for (let file of files) {
+                if (file.type.startsWith('image/')) {
+                    loadedImages[file.name] = file;
+                    await saveFileToLmsDir(file.name, file);
+                    count++;
+                }
+            }
+            alert(`폴더 내 이미지 ${count}개 로드 완료`);
+        });
+
+        // ============================================
+        // 3. 좌표 파일 (JSON or XLSX) 로드
+        // ============================================
+        document.getElementById('coordFileInput').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+
+            if (file.name.endsWith('.json')) {
+                reader.onload = function (event) {
+                    try {
+                        loadedCoordData = JSON.parse(event.target.result);
+                        populatePageSelect();
+                    } catch (err) {
+                        alert('유효하지 않은 JSON 파일입니다.');
+                    }
+                };
+                reader.readAsText(file);
+            } else if (file.name.endsWith('.xlsx')) {
+                reader.onload = function (event) {
+                    try {
+                        const data = new Uint8Array(event.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        const json = XLSX.utils.sheet_to_json(worksheet);
+
+                        loadedCoordData = parseExcelToJson(json);
+                        populatePageSelect();
+                    } catch (err) {
+                        alert('엑셀 파싱 오류: ' + err.message);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        // 엑셀 JSON을 preview 호환 객체로 변환
+        function parseExcelToJson(excelData) {
+            let result = { images: [] };
+            let imageMap = {};
+
+            excelData.forEach(row => {
+                const filename = row['파일명'] || row['filename'] || row['Name'];
+                if (!filename) return;
+
+                if (!imageMap[filename]) {
+                    imageMap[filename] = {
+                        filename: filename,
+                        pageNumber: row['페이지'] || row['page'] || (Object.keys(imageMap).length + 1),
+                        dimensions: { width: row['원본W'] || 1044, height: row['원본H'] || 600 },
+                        touchAreas: []
+                    };
+                }
+
+                imageMap[filename].touchAreas.push({
+                    x: Number(row['X']) || 0,
+                    y: Number(row['Y']) || 0,
+                    width: Number(row['Width'] || row['W']) || 0,
+                    height: Number(row['Height'] || row['H']) || 0
+                });
+            });
+
+            result.images = Object.values(imageMap);
+            return result;
+        }
+
+        // ============================================
+        // 4. UI 및 렌더링 업데이트 로직
+        // ============================================
+        function populatePageSelect() {
+            pageSelect.innerHTML = '<option value="">페이지 선택</option>';
+            if (loadedCoordData && loadedCoordData.images) {
+                loadedCoordData.images.forEach((img, idx) => {
+                    const option = document.createElement('option');
+                    option.value = idx;
+                    option.textContent = img.filename + ' (Page ' + img.pageNumber + ')';
+                    pageSelect.appendChild(option);
+                });
+                pageSelect.style.display = 'block';
+            }
+        }
+
+        pageSelect.addEventListener('change', function () {
+            const idx = this.value;
+            if (idx === "") return;
+            const imageData = loadedCoordData.images[idx];
+            renderBoxes(imageData);
+        });
+
+        // 4. 비율에 맞게 박스 생성
+        function renderBoxes(imageData) {
+            // 기존 박스 제거
+            area.innerHTML = '';
+
+            // LMS 이미지 alt/src 업데이트
+            if (lmsImg) {
+                lmsImg.alt = imageData.filename;
+                const blobUrl = getImageUrl(imageData.filename);
+                if (blobUrl) {
+                    lmsImg.src = blobUrl;
+                } else {
+                    lmsImg.src = '../doc/lms/' + imageData.filename;
+                }
+            }
+
+            // 원본 이미지 크기와 프리뷰 앱 크기 (1044 x 600)
+            const originalWidth = imageData.dimensions.width;
+            const originalHeight = imageData.dimensions.height;
+            const previewWidth = 1044;
+            const previewHeight = 600;
+
+            // 스케일 비율 계산
+            const scaleX = previewWidth / originalWidth;
+            const scaleY = previewHeight / originalHeight;
+
+            imageData.touchAreas.forEach((areaData, index) => {
+                const box = document.createElement('div');
+                box.className = 'drag_box';
+
+                // 비율에 맞게 사이즈 및 위치 변환
+                const scaledX = Math.round(areaData.x * scaleX);
+                const scaledY = Math.round(areaData.y * scaleY);
+                const scaledW = Math.round(areaData.width * scaleX);
+                const scaledH = Math.round(areaData.height * scaleY);
+
+                box.style.left = scaledX + 'px';
+                box.style.top = scaledY + 'px';
+                box.style.width = scaledW + 'px';
+                box.style.height = scaledH + 'px';
+
+                // info-overlay 생성
+                const info = document.createElement('div');
+                info.className = 'info-overlay';
+                box.appendChild(info);
+
+                // 컨테이너에 추가
+                area.appendChild(box);
+
+                // 이벤트 및 옵저버 바인딩
+                ro.observe(box);
+                bindBoxEvents(box);
+
+                updateInfo(box);
+            });
+        }
+
+        // 박스 마우스 이벤트 바인딩 함수
+        function bindBoxEvents(box) {
+            box.addEventListener('mousedown', e => {
+                const rect = box.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                //— 리사이즈 핸들 영역 클릭 시 —
+                if (x > rect.width - HANDLE_SIZE && y > rect.height - HANDLE_SIZE) {
+                    return;
+                }
+
+                //— 일반 영역 클릭 시: .on 토글 및 드래그 준비 —
+                document.querySelectorAll('.drag_box').forEach(b => b.classList.remove('on'));
+                box.classList.add('on');
+
+                activeBox = box;
+                offsetX = e.clientX - box.offsetLeft;
+                offsetY = e.clientY - box.offsetTop;
+
+                e.preventDefault();
+            });
+        }
+
+        // mousemove: activeBox가 있을 때만 드래그
+        document.addEventListener('mousemove', e => {
+            if (!activeBox) return;
+            let x = e.clientX - offsetX;
+            let y = e.clientY - offsetY;
+
+            // 컨테이너 경계 보정
+            x = Math.max(0, Math.min(x, area.clientWidth - activeBox.offsetWidth));
+            y = Math.max(0, Math.min(y, area.clientHeight - activeBox.offsetHeight));
+
+            // 위치 갱신
+            activeBox.style.left = x + 'px';
+            activeBox.style.top = y + 'px';
+            updateInfo(activeBox);
+        });
+
+        // mouseup: 드래그만 종료 (선택 상태(on)는 유지)
+        document.addEventListener('mouseup', () => {
+            activeBox = null;
+        });
+
+        // 박스 내 .info-overlay 텍스트 갱신 (항상 app_preview 크기 기준 좌표가 노출됨)
+        function updateInfo(box) {
+            const info = box.querySelector('.info-overlay');
+            if (info) {
+                info.textContent =
+                    `x: ${box.offsetLeft}px, y: ${box.offsetTop}px, ` +
+                    `w: ${box.offsetWidth}px, h: ${box.offsetHeight}px`;
+            }
+        }
+    </script>
+</body>
+
+</html>
