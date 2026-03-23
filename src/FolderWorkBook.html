@@ -25,6 +25,18 @@
         },
         generate(data, sheetName) {
             sheetName = sheetName || 'Sheet1';
+            // Build shared strings (for proper shared string table)
+            const strings = [];
+            const stringMap = new Map();
+            const getStringIndex = (s) => {
+                s = String(s);
+                if (!stringMap.has(s)) {
+                    stringMap.set(s, strings.length);
+                    strings.push(s);
+                }
+                return stringMap.get(s);
+            };
+            
             // Build sheet XML
             let sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
             sheetXml += '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
@@ -37,12 +49,32 @@
                     if (typeof val === 'number') {
                         sheetXml += `<c r="${ref}"><v>${val}</v></c>`;
                     } else {
-                        sheetXml += `<c r="${ref}" t="inlineStr"><is><t>${this._escapeXml(val)}</t></is></c>`;
+                        const stringIdx = getStringIndex(val);
+                        sheetXml += `<c r="${ref}" t="s"><v>${stringIdx}</v></c>`;
                     }
                 }
                 sheetXml += '</row>';
             }
             sheetXml += '</sheetData></worksheet>';
+            
+            // Build shared strings XML
+            let sharedStringsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+            sharedStringsXml += `<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">`;
+            strings.forEach(s => {
+                sharedStringsXml += `<si><t>${this._escapeXml(s)}</t></si>`;
+            });
+            sharedStringsXml += '</sst>';
+            
+            // Build styles XML (minimal)
+            const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
+                '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+                '<fonts><font><sz val="11"/><color theme="1"/><name val="Calibri"/></font></fonts>' +
+                '<fills><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+                '<borders><border><left/><right/><top/><bottom/></border></borders>' +
+                '<cellStyleXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+                '<cellXfs><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>' +
+                '<cellStyles><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+                '</styleSheet>';
 
             const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                 '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
@@ -50,6 +82,9 @@
                 '<Default Extension="xml" ContentType="application/xml"/>' +
                 '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
                 '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+                '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' +
+                '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+                '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>' +
                 '</Types>';
 
             const rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -64,6 +99,8 @@
             const wbRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                 '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+                '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+                '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>' +
                 '</Relationships>';
 
             // Build ZIP using JSZip-like manual construction
@@ -72,7 +109,9 @@
                 '_rels/.rels': rels,
                 'xl/workbook.xml': workbook,
                 'xl/_rels/workbook.xml.rels': wbRels,
-                'xl/worksheets/sheet1.xml': sheetXml
+                'xl/worksheets/sheet1.xml': sheetXml,
+                'xl/styles.xml': stylesXml,
+                'xl/sharedStrings.xml': sharedStringsXml
             });
         },
         _buildZip(files) {
@@ -187,6 +226,7 @@
         .stat-item strong{color:var(--green);margin-left:4px;}
 
         .app-container{display:grid;grid-template-columns:1fr 400px;height:calc(100vh - 73px);}
+        .app-container.playlist-open{grid-template-columns:260px 1fr 400px;}
 
         .canvas-area{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow:hidden;background:var(--bg);}
 
@@ -240,6 +280,23 @@
         .page-indicator{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;padding:0 12px;color:var(--text);}
 
         .sidebar{border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden;}
+
+        /* Image Playlist Panel */
+        .image-playlist-panel{background:var(--surface);border-right:1px solid var(--border);display:none;flex-direction:column;overflow:hidden;min-width:0;width:0;max-width:0;padding:0;border:none;}
+        .image-playlist-panel.show{display:flex;width:auto;max-width:none;border-right:1px solid var(--border);}
+        .playlist-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+        .playlist-header h3{font-size:13px;font-weight:600;margin:0;}
+        .playlist-content{flex:1;overflow-y:auto;padding:4px;}
+        .playlist-item{padding:8px 12px;margin-bottom:2px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:8px;font-size:11px;max-height:80px;overflow:hidden;}
+        .playlist-item:hover{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
+        .playlist-item.active{border-color:var(--red-accent);background:rgba(255,59,59,0.1);font-weight:600;}
+        .playlist-thumbnail{width:40px;height:40px;background:var(--bg);border:1px solid var(--border);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;}
+        .playlist-item-info{flex:1;min-width:0;}
+        .playlist-item-name{font-size:10px;color:var(--text);word-break:break-all;line-height:1.2;}
+        .playlist-item-status{font-size:9px;color:var(--text-dim);}
+        .playlist-item-status.verified{color:var(--green);}
+        .playlist-item::-webkit-scrollbar{width:3px;}
+        .playlist-item::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
         .sidebar-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
         .sidebar-header h2{font-size:14px;font-weight:600;}
         .badge{background:var(--red-accent);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;}
@@ -248,7 +305,11 @@
 
         /* Settings Section */
         .settings-section{padding:16px 20px;border-bottom:1px solid var(--border);}
-        .settings-section h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:14px;}
+        .settings-section h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:14px;user-select:none;}
+        .settings-section.collapsed h3{margin-bottom:0;}
+        .settings-section.collapsed .settings-toggle{transform:rotate(-90deg);}
+        .settings-section.collapsed .preset-buttons,
+        .settings-section.collapsed .setting-row{display:none;}
         .preset-buttons{display:flex;gap:8px;margin-bottom:12px;}
         .btn-preset{flex:1;padding:8px;font-size:11px;text-align:center;}
         .btn-preset.active{background:var(--red-accent);border-color:var(--red-accent);color:#fff;}
@@ -260,30 +321,31 @@
         select{background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:12px;cursor:pointer;}
 
         /* Results Area */
-        .results-area{flex:1;overflow-y:auto;padding:8px;}
+        .results-area{flex:1;overflow-y:auto;padding:4px;}
         .results-area::-webkit-scrollbar{width:5px;}
         .results-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
 
         .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:12px;gap:6px;text-align:center;padding:32px;}
         .empty-state-icon{font-size:32px;opacity:0.3;margin-bottom:6px;}
 
-        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:10px;}
+        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;}
         @keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         .rect-card:hover,.rect-card.active{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
         .rect-card.selected{border-color:var(--yellow);border-width:2px;background:rgba(255,187,59,0.08);}
         .rect-card-checkbox{width:18px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-top:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg);}
-        .rect-card-checkbox.checked{background:var(--red-accent);border-color:var(--red-accent);}
+        .rect-card-checkbox{border-color:#00e5ff;}
+        .rect-card-checkbox.checked{background:#00e5ff;border-color:#00e5ff;}
         .rect-card-checkbox.checked::after{content:'✓';color:#fff;font-size:10px;font-weight:bold;}
         .rect-card-content{flex:1;}
         .rect-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
         .rect-card-title{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;cursor:grab;}
-        .rect-card-title .drag-handle{opacity:0.5;transition:opacity 0.2s;}
+        .rect-card-title .drag-handle{opacity:0.6;transition:opacity 0.2s;font-size:20px;cursor:grab;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--border);border-radius:4px;letter-spacing:2px;flex-shrink:0;}
         .rect-card:hover .rect-card-title .drag-handle{opacity:1;}
         .rect-card-title .dot{width:7px;height:7px;background:var(--red-accent);border-radius:50%;box-shadow:0 0 6px var(--red-glow);}
         .rect-card-size{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);}
         .rect-card-confidence{position:absolute;top:10px;right:10px;font-size:10px;font-weight:600;color:var(--green);}
         .rect-coords{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
-        .coord-item{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);background:var(--bg);padding:5px 8px;border-radius:5px;display:flex;align-items:center;gap:4px;}
+        .coord-item{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-dim);background:var(--bg);padding:3px 6px;border-radius:4px;display:flex;align-items:center;gap:3px;}
         .coord-item input{background:transparent;border:none;color:var(--green);font-family:inherit;font-size:inherit;width:100%;padding:0;}
         .coord-item input:focus{outline:none;color:var(--red-accent);}
         .coord-item span{color:var(--green);}
@@ -311,7 +373,7 @@
         .drawing-mode-indicator{position:fixed;bottom:24px;left:24px;background:var(--yellow);color:#000;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:600;display:none;z-index:50;}
         .drawing-mode-indicator.active{display:block;}
 
-        @media(max-width:1200px){.app-container{grid-template-columns:1fr;grid-template-rows:1fr auto;}.sidebar{max-height:50vh;}}
+        @media(max-width:1200px){.app-container{grid-template-columns:1fr;grid-template-rows:1fr auto;}.app-container.playlist-open{grid-template-columns:1fr;}.image-playlist-panel{display:none !important;}.sidebar{max-height:50vh;}}
     </style>
 </head>
 <body>
@@ -327,7 +389,16 @@
     </div>
 </header>
 
-<div class="app-container">
+<div class="app-container" id="appContainer">
+    <!-- Image Playlist Panel (grid column) -->
+    <div class="image-playlist-panel" id="playlistPanel">
+        <div class="playlist-header">
+            <h3>📋 이미지 목록</h3>
+            <button class="btn btn-sm" onclick="togglePlaylistPanel()" title="목록 닫기" style="padding:2px 8px;">◀ 닫기</button>
+        </div>
+        <div class="playlist-content" id="playlistContent"></div>
+    </div>
+
     <div class="canvas-area" id="canvasArea">
         <!-- Folder Selection Mode -->
         <div class="folder-mode" id="folderMode">
@@ -381,11 +452,13 @@
         <div class="drawing-mode-indicator" id="drawingModeIndicator">✏️ 그리기 모드 활성화</div>
 
         <div class="navigation-bar" id="navigationBar">
+            <button class="btn" id="togglePlaylistBtn" title="이미지 목록 열기/닫기">📋 목록</button>
             <button class="btn" id="prevBtn">◀ 이전</button>
             <span class="page-indicator" id="pageIndicator">0 / 0</span>
             <button class="btn" id="nextBtn">다음 ▶</button>
             <button class="btn" id="detectBtn">🔍 재감지</button>
             <button class="btn" id="drawModeBtn" title="드로우 모드로 새 박스 그리기">✏️ 그리기</button>
+            <button class="btn" id="downloadPageJsonBtn" title="현재 페이지의 좌표만 JSON으로 다운로드">📄 페이지 JSON</button>
             <button class="btn btn-success" id="markVerifiedBtn">✓ 검증완료</button>
         </div>
     </div>
@@ -397,7 +470,7 @@
         </div>
 
         <div class="settings-section">
-            <h3>워크북 프리셋</h3>
+            <h3 style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleSettingsPanel(this)" title="클릭하여 접기/펼치기"><span>워크북 프리셋</span><span class="settings-toggle" style="font-size:10px;transition:transform 0.3s;">▼</span></h3>
             <div class="preset-buttons">
                 <button class="btn btn-preset btn-sm active" data-preset="workbook">워크북</button>
                 <button class="btn btn-preset btn-sm" data-preset="card">카드</button>
@@ -406,14 +479,14 @@
             <div class="setting-row">
                 <span class="setting-label">최소 영역</span>
                 <div style="display:flex;align-items:center;gap:6px;">
-                    <input type="range" id="minArea" min="100" max="50000" value="500" step="100">
-                    <span class="setting-value" id="minAreaVal">500</span>
+                    <input type="range" id="minArea" min="100" max="100000" value="25000" step="100">
+                    <span class="setting-value" id="minAreaVal">25000</span>
                 </div>
             </div>
             <div class="setting-row">
                 <span class="setting-label">최대 박스 수</span>
                 <div style="display:flex;align-items:center;gap:6px;">
-                    <input type="range" id="maxBoxCount" min="5" max="100" value="100" step="1">
+                    <input type="number" id="maxBoxCount" min="1" max="500" value="100" style="width:80px;background:var(--surface2);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;">
                     <span class="setting-value" id="maxBoxCountVal">100</span>
                 </div>
             </div>
@@ -556,7 +629,7 @@ function findContourBoundingBoxes(mask, w, h, minArea) {
             if (area >= minArea) {
                 const aspect = Math.max(bw, bh) / Math.max(Math.min(bw, bh), 1);
                 if (aspect < 20) {
-                    results.push({x: minX, y: minY, width: bw, height: bh, area, pixelCount: count});
+                    results.push({x: Math.floor(minX), y: Math.floor(minY), width: Math.floor(bw), height: Math.floor(bh), area, pixelCount: count});
                 }
             }
         }
@@ -584,7 +657,7 @@ function mergeOverlapping(rects) {
                 w = x2 - x; h = y2 - y; used.add(j);
             }
         }
-        merged.push({x, y, width: x2 - x, height: y2 - y, area: (x2 - x) * (y2 - y)});
+        merged.push({x: Math.floor(x), y: Math.floor(y), width: Math.floor(x2 - x), height: Math.floor(y2 - y), area: (x2 - x) * (y2 - y)});
     }
     return merged;
 }
@@ -602,15 +675,28 @@ function detectRectangles(canvas, satMin, valMin, minArea, maxBoxCount) {
         rects = rects.slice(0, maxBoxCount);
     }
 
-    // Sort by top-to-bottom, then left-to-right
-    rects.sort((a, b) => {
+    // Split into left and right pages, then sort within each
+    const pageWidth = w / 2;
+    const leftRects = rects.filter(r => r.x < pageWidth);
+    const rightRects = rects.filter(r => r.x >= pageWidth);
+    
+    const sortByPageOrder = (a, b) => {
         if (Math.abs(a.y - b.y) > 20) return a.y - b.y;
         return a.x - b.x;
-    });
+    };
+    
+    leftRects.sort(sortByPageOrder);
+    rightRects.sort(sortByPageOrder);
+    rects = leftRects.concat(rightRects);
 
     rects.forEach((r, i) => {
         r.id = i + 1;
         r.confidence = Math.min(0.99, r.pixelCount / r.area);
+        // Ensure all coordinates are integers
+        r.x = Math.floor(r.x);
+        r.y = Math.floor(r.y);
+        r.width = Math.floor(r.width);
+        r.height = Math.floor(r.height);
     });
     return rects;
 }
@@ -848,6 +934,7 @@ $('startBatchBtn').addEventListener('click', async function() {
     loadCurrentImage();
     updateStats();
 
+    openPlaylistPanel();
     showToast('배치 처리 완료! 검증을 시작하세요');
 });
 
@@ -858,6 +945,9 @@ function loadCurrentImage() {
     if (imageFiles.length === 0) return;
 
     const file = imageFiles[currentImageIndex];
+    
+    // Update playlist
+    renderPlaylist();
     const result = allResults[file.name];
 
     if (!result) return;
@@ -904,6 +994,9 @@ function loadCurrentImage() {
     $('drawingModeIndicator').classList.remove('active');
     $('drawModeBtn').classList.remove('btn-success');
 }
+
+
+$('togglePlaylistBtn').addEventListener('click', togglePlaylistPanel);
 
 $('prevBtn').addEventListener('click', () => {
     if (currentImageIndex > 0) {
@@ -1026,9 +1119,32 @@ function drawOverlay() {
         overlayCtx.fillStyle = '#000';
         overlayCtx.fillText(label, r.x + 6, r.y - 8);
 
+        // X delete button (drawn on canvas, top-right of box)
+        const btnR = 42;
+        const btnCx = r.x + r.width;
+        const btnCy = r.y;
+        // Red circle
+        overlayCtx.beginPath();
+        overlayCtx.arc(btnCx, btnCy, btnR, 0, Math.PI * 2);
+        overlayCtx.fillStyle = 'rgba(255,59,59,0.9)';
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = '#fff';
+        overlayCtx.lineWidth = 4;
+        overlayCtx.stroke();
+        // X mark
+        const xS = 18;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(btnCx - xS, btnCy - xS);
+        overlayCtx.lineTo(btnCx + xS, btnCy + xS);
+        overlayCtx.moveTo(btnCx + xS, btnCy - xS);
+        overlayCtx.lineTo(btnCx - xS, btnCy + xS);
+        overlayCtx.strokeStyle = '#fff';
+        overlayCtx.lineWidth = 6;
+        overlayCtx.stroke();
+
         // Corner dots
         overlayCtx.fillStyle = isSelected ? '#ffbb3b' : '#00ff66';
-        const cornerSize = isSelected ? 8 : 6;
+        const cornerSize = isSelected ? 10 : 6;
         [[r.x, r.y], [r.x + r.width, r.y], [r.x, r.y + r.height], [r.x + r.width, r.y + r.height]].forEach(([cx, cy]) => {
             overlayCtx.beginPath();
             overlayCtx.arc(cx, cy, cornerSize, 0, Math.PI * 2);
@@ -1039,6 +1155,25 @@ function drawOverlay() {
                 overlayCtx.stroke();
             }
         });
+
+        // Mid-edge handles (only for selected box)
+        if (isSelected) {
+            const midHandleSize = 7;
+            const midHandles = [
+                [r.x + r.width / 2, r.y],                    // top
+                [r.x + r.width / 2, r.y + r.height],         // bottom
+                [r.x, r.y + r.height / 2],                    // left
+                [r.x + r.width, r.y + r.height / 2]           // right
+            ];
+            overlayCtx.fillStyle = '#00e5ff';
+            midHandles.forEach(([mx, my]) => {
+                overlayCtx.beginPath();
+                overlayCtx.fillRect(mx - midHandleSize, my - midHandleSize, midHandleSize * 2, midHandleSize * 2);
+                overlayCtx.strokeStyle = '#fff';
+                overlayCtx.lineWidth = 2;
+                overlayCtx.strokeRect(mx - midHandleSize, my - midHandleSize, midHandleSize * 2, midHandleSize * 2);
+            });
+        }
     });
 
     // Draw selection rectangle if dragging
@@ -1050,6 +1185,7 @@ function drawOverlay() {
         overlayCtx.strokeRect(x, y, endX - x, endY - y);
         overlayCtx.setLineDash([]);
     }
+
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1077,13 +1213,14 @@ function renderResults() {
                         <span class="dot"></span>
                         박스 <input type="text" value="${r.id}" style="width:30px;background:rgba(255,255,255,0.1);border:1px solid var(--border);padding:2px 4px;border-radius:3px;color:inherit;text-align:center;" onchange="changeBoxNumber(${i}, this.value)" onclick="event.stopPropagation()">
                     </div>
-                    <div class="rect-card-size">${r.width} × ${r.height}px</div>
+                    <div class="rect-card-size">${Math.floor(r.width)} × ${Math.floor(r.height)}px</div>
+                    <button class="btn btn-sm" onclick="event.stopPropagation(); deleteRect(${i})" style="background:rgba(255,59,59,0.2);border-color:#ff3b3b;padding:4px 8px;font-size:10px;width:auto;height:auto;">✕</button>
                 </div>
                 <div class="rect-coords">
-                    <div class="coord-item">X: <input type="text" value="${r.x}" onchange="updateCoord(${i}, 'x', this.value)" onclick="event.stopPropagation()"></div>
-                    <div class="coord-item">Y: <input type="text" value="${r.y}" onchange="updateCoord(${i}, 'y', this.value)" onclick="event.stopPropagation()"></div>
-                    <div class="coord-item">W: <input type="text" value="${r.width}" onchange="updateCoord(${i}, 'width', this.value)" onclick="event.stopPropagation()"></div>
-                    <div class="coord-item">H: <input type="text" value="${r.height}" onchange="updateCoord(${i}, 'height', this.value)" onclick="event.stopPropagation()"></div>
+                    <div class="coord-item">X: <input type="text" value="${Math.floor(r.x)}" onchange="updateCoord(${i}, 'x', this.value)" onclick="event.stopPropagation()"></div>
+                    <div class="coord-item">Y: <input type="text" value="${Math.floor(r.y)}" onchange="updateCoord(${i}, 'y', this.value)" onclick="event.stopPropagation()"></div>
+                    <div class="coord-item">W: <input type="text" value="${Math.floor(r.width)}" onchange="updateCoord(${i}, 'width', this.value)" onclick="event.stopPropagation()"></div>
+                    <div class="coord-item">H: <input type="text" value="${Math.floor(r.height)}" onchange="updateCoord(${i}, 'height', this.value)" onclick="event.stopPropagation()"></div>
                 </div>
                 <div class="rect-actions">
                     <button class="btn btn-sm" onclick="deleteRect(${i})">삭제</button>
@@ -1151,6 +1288,73 @@ function toggleCheckbox(index) {
     renderResults();
 }
 
+function toggleSettingsPanel(headerElement) {
+    const section = headerElement.closest('.settings-section');
+    section.classList.toggle('collapsed');
+}
+
+function togglePlaylistPanel() {
+    const panel = $('playlistPanel');
+    const container = $('appContainer');
+    const isVisible = panel.classList.contains('show');
+    if (isVisible) {
+        panel.classList.remove('show');
+        container.classList.remove('playlist-open');
+        $('togglePlaylistBtn').textContent = '📋 목록';
+    } else {
+        panel.classList.add('show');
+        container.classList.add('playlist-open');
+        $('togglePlaylistBtn').textContent = '📋 닫기';
+        renderPlaylist();
+    }
+}
+
+function openPlaylistPanel() {
+    const panel = $('playlistPanel');
+    if (!panel.classList.contains('show')) {
+        panel.classList.add('show');
+        $('appContainer').classList.add('playlist-open');
+        $('togglePlaylistBtn').textContent = '📋 닫기';
+        renderPlaylist();
+    }
+}
+
+function renderPlaylist() {
+    if (imageFiles.length === 0) {
+        $('playlistContent').innerHTML = '<div class="empty-state" style="padding:16px;"><small>이미지가 로드되지 않았습니다</small></div>';
+        return;
+    }
+    
+    $('playlistContent').innerHTML = imageFiles.map((file, idx) => {
+        const result = allResults[file.name];
+        const isActive = idx === currentImageIndex;
+        const statusClass = result?.verified ? 'verified' : '';
+        const statusText = result?.verified ? '✓ 검증' : (result?.rects.length > 0 ? '⚙ 분석됨' : '○ 대기');
+        
+        return `<div class="playlist-item ${isActive ? 'active' : ''}" onclick="jumpToImage(${idx})" style="cursor:pointer;">
+            <div class="playlist-thumbnail">🖼️</div>
+            <div class="playlist-item-info">
+                <div class="playlist-item-name" title="${file.name}">${file.name}</div>
+                <div class="playlist-item-status ${statusClass}">${statusText} • ${result?.rects.length ?? 0}개</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function jumpToImage(idx) {
+    currentImageIndex = idx;
+    loadCurrentImage();
+    renderPlaylist();
+}
+
+// Update playlist when images are loaded
+const originalLoadFolderFiles = loadFolderFiles;
+loadFolderFiles = function(files) {
+    originalLoadFolderFiles.call(this, files);
+    // Playlist will be rendered after batch processing
+};
+
+
 function updateMultiSelectUI() {
     const btn = $('multiSelectActions');
     if (selectedRectIndices.size > 0) {
@@ -1174,7 +1378,7 @@ function changeBoxNumber(index, newId) {
 function updateCoord(index, field, value) {
     const file = imageFiles[currentImageIndex];
     const result = allResults[file.name];
-    const numVal = parseInt(value);
+    const numVal = Math.floor(parseInt(value));
     if (!isNaN(numVal)) {
         result.rects[index][field] = numVal;
         result.rects[index].area = result.rects[index].width * result.rects[index].height;
@@ -1266,13 +1470,13 @@ overlayCanvas.addEventListener('mouseup', function(e) {
         const file = imageFiles[currentImageIndex];
         const result = allResults[file.name];
         const newRect = {
-            x: minX,
-            y: minY,
-            width: width,
-            height: height,
-            area: width * height,
+            x: Math.floor(minX),
+            y: Math.floor(minY),
+            width: Math.floor(width),
+            height: Math.floor(height),
+            area: Math.floor(width) * Math.floor(height),
             confidence: 0.5,
-            pixelCount: width * height * 0.5,
+            pixelCount: Math.floor(width) * Math.floor(height) * 0.5,
             id: result.rects.length + 1
         };
         result.rects.push(newRect);
@@ -1307,11 +1511,24 @@ function getCanvasCoordinates(e) {
     };
 }
 
-function getNearCorner(x, y, rect) {
+function setCursorForHandle(handle) {
+    switch(handle) {
+        case 'tl': case 'br': overlayCanvas.style.cursor = 'nwse-resize'; break;
+        case 'tr': case 'bl': overlayCanvas.style.cursor = 'nesw-resize'; break;
+        case 't': case 'b': overlayCanvas.style.cursor = 'ns-resize'; break;
+        case 'l': case 'r': overlayCanvas.style.cursor = 'ew-resize'; break;
+        default: overlayCanvas.style.cursor = 'default';
+    }
+}
+
+function getNearHandle(x, y, rect, onlySelected = false) {
+    if (onlySelected && selectedRectIndex < 0) return null;
+    
     const canvasRect = overlayCanvas.getBoundingClientRect();
     const scale = overlayCanvas.width / canvasRect.width;
     const threshold = 25 * scale;
 
+    // Corner handles
     const corners = {
         tl: {x: rect.x, y: rect.y},
         tr: {x: rect.x + rect.width, y: rect.y},
@@ -1319,10 +1536,26 @@ function getNearCorner(x, y, rect) {
         br: {x: rect.x + rect.width, y: rect.y + rect.height}
     };
 
+    // Mid-edge handles
+    const midEdges = {
+        t: {x: rect.x + rect.width / 2, y: rect.y},
+        b: {x: rect.x + rect.width / 2, y: rect.y + rect.height},
+        l: {x: rect.x, y: rect.y + rect.height / 2},
+        r: {x: rect.x + rect.width, y: rect.y + rect.height / 2}
+    };
+
+    // Check corners first (higher priority)
     for (let [key, corner] of Object.entries(corners)) {
         const dist = Math.sqrt((x - corner.x) ** 2 + (y - corner.y) ** 2);
         if (dist < threshold) return key;
     }
+
+    // Check mid-edges
+    for (let [key, edge] of Object.entries(midEdges)) {
+        const dist = Math.sqrt((x - edge.x) ** 2 + (y - edge.y) ** 2);
+        if (dist < threshold) return key;
+    }
+    
     return null;
 }
 
@@ -1338,10 +1571,51 @@ overlayCanvas.addEventListener('mousedown', function(e) {
     const result = allResults[file.name];
     if (!result) return;
 
-    // Check for corner or box click
+    // Check if X delete button on any box was clicked
+    const delBtnR = 42;
+    for (let i = result.rects.length - 1; i >= 0; i--) {
+        const r = result.rects[i];
+        const btnCx = r.x + r.width;
+        const btnCy = r.y;
+        const dist = Math.sqrt((x - btnCx) ** 2 + (y - btnCy) ** 2);
+        if (dist <= delBtnR + 4) {
+            e.stopPropagation();
+            deleteRect(i);
+            return;
+        }
+    }
+
+    // If a box is already selected, prioritize it for interaction
+    if (selectedRectIndex >= 0 && selectedRectIndex < result.rects.length) {
+        const selectedRect = result.rects[selectedRectIndex];
+        const corner = getNearHandle(x, y, selectedRect);
+        
+        if (corner) {
+            isResizing = true;
+            resizeCorner = corner;
+            originalRect = {...selectedRect};
+            dragStartX = x;
+            dragStartY = y;
+            drawOverlay();
+            renderResults();
+            setCursorForHandle(corner);
+            return;
+        } else if (isInsideRect(x, y, selectedRect)) {
+            isDragging = true;
+            originalRect = {...selectedRect};
+            dragStartX = x;
+            dragStartY = y;
+            drawOverlay();
+            renderResults();
+            overlayCanvas.style.cursor = 'move';
+            return;
+        }
+    }
+
+    // Check for corner or box click - deselect first if needed
     for (let i = result.rects.length - 1; i >= 0; i--) {
         const rect = result.rects[i];
-        const corner = getNearCorner(x, y, rect);
+        const corner = getNearHandle(x, y, rect);
 
         if (corner) {
             isResizing = true;
@@ -1352,7 +1626,7 @@ overlayCanvas.addEventListener('mousedown', function(e) {
             dragStartY = y;
             drawOverlay();
             renderResults();
-            overlayCanvas.style.cursor = 'nwse-resize';
+            setCursorForHandle(corner);
             return;
         } else if (isInsideRect(x, y, rect)) {
             isDragging = true;
@@ -1417,6 +1691,20 @@ overlayCanvas.addEventListener('mousemove', function(e) {
                 rect.width = originalRect.width + dx;
                 rect.height = originalRect.height + dy;
                 break;
+            case 't':
+                rect.y = originalRect.y + dy;
+                rect.height = originalRect.height - dy;
+                break;
+            case 'b':
+                rect.height = originalRect.height + dy;
+                break;
+            case 'l':
+                rect.x = originalRect.x + dx;
+                rect.width = originalRect.width - dx;
+                break;
+            case 'r':
+                rect.width = originalRect.width + dx;
+                break;
         }
 
         rect.width = Math.max(20, rect.width);
@@ -1427,10 +1715,23 @@ overlayCanvas.addEventListener('mousemove', function(e) {
         renderResults();
     } else {
         let cursorSet = false;
+        // Check X delete button hover
+        const delBtnR = 42;
+        for (let r of result.rects) {
+            const btnCx = r.x + r.width;
+            const btnCy = r.y;
+            const dist = Math.sqrt((x - btnCx) ** 2 + (y - btnCy) ** 2);
+            if (dist <= delBtnR + 4) {
+                overlayCanvas.style.cursor = 'pointer';
+                cursorSet = true;
+                break;
+            }
+        }
+        if (!cursorSet) {
         for (let rect of result.rects) {
-            const corner = getNearCorner(x, y, rect);
-            if (corner) {
-                overlayCanvas.style.cursor = 'nwse-resize';
+            const handle = getNearHandle(x, y, rect);
+            if (handle) {
+                setCursorForHandle(handle);
                 cursorSet = true;
                 break;
             } else if (isInsideRect(x, y, rect)) {
@@ -1438,6 +1739,7 @@ overlayCanvas.addEventListener('mousemove', function(e) {
                 cursorSet = true;
                 break;
             }
+        }
         }
         if (!cursorSet) {
             overlayCanvas.style.cursor = 'crosshair';
@@ -1455,10 +1757,21 @@ overlayCanvas.addEventListener('mouseup', function(e) {
         const file = imageFiles[currentImageIndex];
         const result = allResults[file.name];
         if (result) {
+            // 드래그/리사이즈 완료 시 좌표 정수 내림 처리
+            if (selectedRectIndex >= 0 && result.rects[selectedRectIndex]) {
+                const rect = result.rects[selectedRectIndex];
+                rect.x = Math.floor(rect.x);
+                rect.y = Math.floor(rect.y);
+                rect.width = Math.floor(rect.width);
+                rect.height = Math.floor(rect.height);
+                rect.area = rect.width * rect.height;
+            }
             result.verified = false;
             result.status = 'pending';
         }
 
+        drawOverlay();
+        renderResults();
         updateStats();
         showToast('박스가 수정되었습니다. 검증을 다시 진행하세요.');
     }
@@ -1538,9 +1851,85 @@ function updateStats() {
     $('exportStats').textContent = stats;
 }
 
+
+// Resolution scale change handler (Change #7)
+let previousResolutionScale = 1;
+
+$('resolutionScale').addEventListener('change', function(e) {
+    const newScale = parseFloat(e.target.value);
+    if (previousResolutionScale === newScale) return;
+    
+    const scaleRatio = newScale / previousResolutionScale;
+    
+    // Show confirmation dialog
+    if (!confirm(`해상도를 ${previousResolutionScale}x에서 ${newScale}x로 변경하시겠습니까?\n모든 좌표가 ${scaleRatio.toFixed(2)}배로 스케일됩니다.`)) {
+        e.target.value = previousResolutionScale;
+        return;
+    }
+    
+    // Scale all existing coordinates
+    for (const [filename, result] of Object.entries(allResults)) {
+        result.rects.forEach(r => {
+            r.x = Math.floor(r.x * scaleRatio);
+            r.y = Math.floor(r.y * scaleRatio);
+            r.width = Math.floor(r.width * scaleRatio);
+            r.height = Math.floor(r.height * scaleRatio);
+            r.area = r.width * r.height;
+        });
+    }
+    
+    previousResolutionScale = newScale;
+    
+    // Refresh current view
+    if (imageFiles.length > 0) {
+        drawOverlay();
+        renderResults();
+    }
+    
+    showToast(`해상도 스케일: ${newScale}x로 변경되었습니다 (모든 좌표 스케일됨)`);
+});
+
 // ═══════════════════════════════════════════════════════════
 // EXPORT FUNCTIONS
 // ═══════════════════════════════════════════════════════════
+$('downloadPageJsonBtn').addEventListener('click', () => {
+    if (imageFiles.length === 0) {
+        showToast('파일을 로드해주세요', 'error');
+        return;
+    }
+    
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    
+    const pageData = {
+        filename: file.name,
+        verified: result.verified,
+        rects: result.rects.map(r => ({
+            id: r.id,
+            x: Math.floor(r.x),
+            y: Math.floor(r.y),
+            width: Math.floor(r.width),
+            height: Math.floor(r.height),
+            x2: Math.floor(r.x + r.width),
+            y2: Math.floor(r.y + r.height),
+            confidence: r.confidence
+        }))
+    };
+    
+    const json = JSON.stringify(pageData, null, 2);
+    const blob = new Blob([json], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name.replace(/\.[^.]+$/, '') + '_coords.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast('현재 페이지 JSON이 다운로드되었습니다');
+});
+
 $('exportJsonBtn').addEventListener('click', function() {
     const exportData = {
         project: '도요새 중국어 워크북',
@@ -1559,12 +1948,12 @@ $('exportJsonBtn').addEventListener('click', function() {
                 },
                 touchAreas: result.rects.map(r => ({
                     id: r.id,
-                    x: r.x,
-                    y: r.y,
-                    width: r.width,
-                    height: r.height,
-                    x2: r.x + r.width,
-                    y2: r.y + r.height,
+                    x: Math.floor(r.x),
+                    y: Math.floor(r.y),
+                    width: Math.floor(r.width),
+                    height: Math.floor(r.height),
+                    x2: Math.floor(r.x + r.width),
+                    y2: Math.floor(r.y + r.height),
                     confidence: r.confidence
                 }))
             };
@@ -1588,7 +1977,7 @@ $('exportCsvBtn').addEventListener('click', function() {
     imageFiles.forEach((file, idx) => {
         const result = allResults[file.name];
         result.rects.forEach(r => {
-            csv += `${idx + 1},${file.name},${r.id},${r.x},${r.y},${r.width},${r.height},${r.x + r.width},${r.y + r.height},${r.confidence.toFixed(2)},${result.verified ? '검증완료' : '미검증'}\n`;
+            csv += `${idx + 1},${file.name},${r.id},${Math.floor(r.x)},${Math.floor(r.y)},${Math.floor(r.width)},${Math.floor(r.height)},${Math.floor(r.x + r.width)},${Math.floor(r.y + r.height)},${r.confidence.toFixed(2)},${result.verified ? '검증완료' : '미검증'}\n`;
         });
     });
 
@@ -1616,12 +2005,12 @@ $('exportExcelBtn').addEventListener('click', function() {
                     idx + 1,
                     file.name,
                     r.id,
-                    r.x,
-                    r.y,
-                    r.width,
-                    r.height,
-                    r.x + r.width,
-                    r.y + r.height,
+                    Math.floor(r.x),
+                    Math.floor(r.y),
+                    Math.floor(r.width),
+                    Math.floor(r.height),
+                    Math.floor(r.x + r.width),
+                    Math.floor(r.y + r.height),
                     parseFloat(r.confidence.toFixed(2)),
                     result.verified ? '검증완료' : '미검증'
                 ]);
@@ -1658,7 +2047,7 @@ document.querySelectorAll('.btn-preset').forEach(btn => {
 
         const preset = this.dataset.preset;
         if (preset === 'workbook') {
-            $('minArea').value = 500;
+            $('minArea').value = 25000;
             $('satThresh').value = 100;
             $('valThresh').value = 100;
             $('maxBoxCount').value = 100;
