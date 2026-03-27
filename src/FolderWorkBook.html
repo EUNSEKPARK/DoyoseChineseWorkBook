@@ -356,13 +356,11 @@
         .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:12px;gap:6px;text-align:center;padding:32px;}
         .empty-state-icon{font-size:32px;opacity:0.3;margin-bottom:6px;}
 
-        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), margin 0.25s cubic-bezier(0.2,0.8,0.4,1), opacity 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;user-select:none;}
+        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), opacity 0.15s, background 0.2s, border-color 0.2s, box-shadow 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;user-select:none;}
         @keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-        .rect-card.drag-shift-down{transform:translateY(8px);margin-bottom:calc(4px + var(--drag-card-h, 52px));transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), margin 0.25s cubic-bezier(0.2,0.8,0.4,1);}
-        .rect-card.drag-shift-up{transform:translateY(-8px);margin-top:calc(var(--drag-card-h, 52px));transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), margin 0.25s cubic-bezier(0.2,0.8,0.4,1);}
-        .rect-card.dragging{opacity:0;height:0;padding:0;margin:0;border:none;overflow:hidden;pointer-events:none;transition:none;}
-        .drag-ghost{position:fixed;pointer-events:none;z-index:1000;background:var(--surface2);border:2px solid var(--red-accent);border-radius:8px;padding:8px 12px;box-shadow:0 8px 32px rgba(255,59,59,0.3),0 0 0 1px rgba(255,59,59,0.15);opacity:0.95;font-size:12px;color:var(--text);white-space:nowrap;transform:scale(1.04);transition:box-shadow 0.2s;}
-        .drag-placeholder{background:rgba(255,59,59,0.06);border:2px dashed var(--red-accent);border-radius:8px;margin-bottom:4px;transition:height 0.25s cubic-bezier(0.2,0.8,0.4,1), opacity 0.2s;opacity:0.8;}
+        .rect-card.dragging-source{opacity:0.25;background:rgba(255,59,59,0.05);border:1px dashed var(--border);transform:scale(0.97);}
+        .drag-ghost{position:fixed;pointer-events:none;z-index:1000;background:var(--surface2);border:2px solid var(--red-accent);border-radius:8px;padding:10px 14px;box-shadow:0 12px 40px rgba(255,59,59,0.35),0 0 0 1px rgba(255,59,59,0.15);opacity:0.97;font-size:12px;color:var(--text);white-space:nowrap;transform:rotate(1.5deg) scale(1.03);}
+        .drag-placeholder{background:rgba(255,59,59,0.08);border:2px dashed var(--red-accent);border-radius:8px;margin-bottom:4px;transition:height 0.2s cubic-bezier(0.2,0.8,0.4,1);min-height:4px;}
         .rect-card:hover,.rect-card.active{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
         .rect-card.selected{border-color:var(--yellow);border-width:2px;background:rgba(255,187,59,0.08);}
         .rect-card-checkbox{width:18px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-top:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg);}
@@ -1317,7 +1315,7 @@ function renderResults() {
             card.scrollIntoView({behavior: 'smooth', block: 'nearest'});
         });
 
-        // Custom drag reorder via drag-handle
+        // Custom drag reorder via drag-handle (mouse + touch)
         const handle = card.querySelector('[data-drag-handle]');
         if (handle) {
             handle.addEventListener('mousedown', (e) => {
@@ -1325,6 +1323,12 @@ function renderResults() {
                 e.stopPropagation();
                 startCardDrag(i, e.clientY, card);
             });
+            handle.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const touch = e.touches[0];
+                startCardDrag(i, touch.clientY, card);
+            }, {passive: false});
         }
     });
 }
@@ -1333,150 +1337,165 @@ function renderResults() {
 // CUSTOM DRAG-TO-REORDER (smooth placeholder animation)
 // ═══════════════════════════════════════════════════════════
 let dragPlaceholderEl = null;
-let dragInsertIndex = -1;
-let dragCardHeight = 0;
+let dragCurrentSlot = -1; // visual slot where placeholder sits
 
 function startCardDrag(index, mouseY, cardEl) {
-    draggedRectIndex = index;
-    dragStartMouseY = mouseY;
-    dragInsertIndex = index;
+    try {
+        draggedRectIndex = index;
+        dragCurrentSlot = index;
 
-    // Measure card height before collapsing
-    const cardRect = cardEl.getBoundingClientRect();
-    dragCardHeight = cardRect.height + 4; // include margin-bottom
+        // Measure card before any changes
+        const cardRect = cardEl.getBoundingClientRect();
+        const cardH = cardRect.height;
+        const ghostOffsetY = mouseY - cardRect.top;
 
-    // Create ghost element (follows cursor)
-    const file = imageFiles[currentImageIndex];
-    const result = allResults[file.name];
-    const r = result.rects[index];
-    dragGhostEl = document.createElement('div');
-    dragGhostEl.className = 'drag-ghost';
-    dragGhostEl.innerHTML = `<span style="display:flex;align-items:center;gap:6px;"><span style="width:7px;height:7px;background:var(--red-accent);border-radius:50;display:inline-block;"></span> 박스 ${r.id}  (${Math.floor(r.width)}×${Math.floor(r.height)})</span>`;
-    dragGhostEl.style.left = cardRect.left + 'px';
-    dragGhostEl.style.top = (mouseY - 16) + 'px';
-    dragGhostEl.style.width = cardRect.width + 'px';
-    document.body.appendChild(dragGhostEl);
+        // Create ghost (follows cursor)
+        const file = imageFiles[currentImageIndex];
+        const result = allResults[file.name];
+        const r = result.rects[index];
+        dragGhostEl = document.createElement('div');
+        dragGhostEl.className = 'drag-ghost';
+        dragGhostEl.textContent = `박스 ${r.id}  (${Math.floor(r.width)}×${Math.floor(r.height)})`;
+        dragGhostEl.style.left = cardRect.left + 'px';
+        dragGhostEl.style.top = (mouseY - ghostOffsetY) + 'px';
+        dragGhostEl.style.width = cardRect.width + 'px';
+        document.body.appendChild(dragGhostEl);
 
-    // Create placeholder element
-    dragPlaceholderEl = document.createElement('div');
-    dragPlaceholderEl.className = 'drag-placeholder';
-    dragPlaceholderEl.style.height = cardRect.height + 'px';
+        // Create placeholder (takes the card's place)
+        dragPlaceholderEl = document.createElement('div');
+        dragPlaceholderEl.className = 'drag-placeholder';
+        dragPlaceholderEl.style.height = cardH + 'px';
 
-    // Collapse the dragged card and insert placeholder in its place
-    cardEl.classList.add('dragging');
-    cardEl.parentNode.insertBefore(dragPlaceholderEl, cardEl);
+        // Mark source card as semi-transparent (NOT collapsed)
+        cardEl.classList.add('dragging-source');
 
-    const resultsArea = $('resultsArea');
+        // Insert placeholder right before the source card, then hide source
+        const resultsArea = $('resultsArea');
+        resultsArea.insertBefore(dragPlaceholderEl, cardEl);
+        cardEl.style.display = 'none';
 
-    const onMouseMove = (e) => {
-        e.preventDefault();
+        const onMouseMove = (e) => {
+            e.preventDefault();
 
-        // Move ghost to follow cursor
-        if (dragGhostEl) {
-            dragGhostEl.style.top = (e.clientY - 16) + 'px';
-        }
-
-        // Find which position the placeholder should be at
-        const cards = Array.from(resultsArea.querySelectorAll('.rect-card:not(.dragging)'));
-        let newInsertIndex = cards.length; // default: end
-
-        for (let i = 0; i < cards.length; i++) {
-            const rect = cards[i].getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            if (e.clientY < midY) {
-                newInsertIndex = i;
-                break;
+            // Move ghost
+            if (dragGhostEl) {
+                dragGhostEl.style.top = (e.clientY - ghostOffsetY) + 'px';
             }
-        }
 
-        // Adjust index for original position
-        if (newInsertIndex > draggedRectIndex) {
-            // placeholder is after original position, account for collapsed card
-        }
+            // Get all visible cards (exclude hidden source)
+            const allChildren = Array.from(resultsArea.children);
+            const visibleCards = allChildren.filter(el =>
+                el.classList.contains('rect-card') && el.style.display !== 'none'
+            );
 
-        // Only move placeholder if position changed
-        if (newInsertIndex !== dragInsertIndex) {
-            dragInsertIndex = newInsertIndex;
+            // Determine which slot the cursor is over
+            let targetSlot = visibleCards.length; // default: end
+            for (let i = 0; i < visibleCards.length; i++) {
+                const r = visibleCards[i].getBoundingClientRect();
+                if (e.clientY < r.top + r.height / 2) {
+                    targetSlot = i;
+                    break;
+                }
+            }
 
-            // Remove existing placeholder
-            if (dragPlaceholderEl.parentNode) {
+            // Move placeholder if slot changed
+            if (targetSlot !== dragCurrentSlot) {
+                dragCurrentSlot = targetSlot;
                 dragPlaceholderEl.remove();
+                if (targetSlot >= visibleCards.length) {
+                    // After last visible card
+                    resultsArea.appendChild(dragPlaceholderEl);
+                    // Move hidden source after placeholder
+                    resultsArea.appendChild(cardEl);
+                } else {
+                    resultsArea.insertBefore(dragPlaceholderEl, visibleCards[targetSlot]);
+                    // Move hidden source after placeholder
+                    dragPlaceholderEl.after(cardEl);
+                }
             }
 
-            // Insert placeholder at new position
-            if (newInsertIndex >= cards.length) {
-                resultsArea.appendChild(dragPlaceholderEl);
-            } else {
-                resultsArea.insertBefore(dragPlaceholderEl, cards[newInsertIndex]);
+            // Auto-scroll near edges
+            const areaRect = resultsArea.getBoundingClientRect();
+            if (e.clientY < areaRect.top + 40) resultsArea.scrollTop -= 10;
+            else if (e.clientY > areaRect.bottom - 40) resultsArea.scrollTop += 10;
+        };
+
+        const onMouseUp = () => {
+            // Event listeners are cleaned up by caller (onEnd/cleanup)
+            try {
+                // Figure out the final position by counting visible cards before placeholder
+                const allChildren = Array.from(resultsArea.children);
+                let visualPos = 0;
+                for (const el of allChildren) {
+                    if (el === dragPlaceholderEl) break;
+                    if (el.classList.contains('rect-card') && el.style.display !== 'none') {
+                        visualPos++;
+                    }
+                }
+
+                // Map visual position → data index (account for the hidden source)
+                let dataTarget = visualPos;
+                if (visualPos >= index) dataTarget = visualPos + 1;
+
+                // Cleanup DOM
+                if (dragGhostEl) { dragGhostEl.remove(); dragGhostEl = null; }
+                if (dragPlaceholderEl) { dragPlaceholderEl.remove(); dragPlaceholderEl = null; }
+                cardEl.classList.remove('dragging-source');
+                cardEl.style.display = '';
+
+                // Perform reorder
+                const fileObj = imageFiles[currentImageIndex];
+                const rects = allResults[fileObj.name].rects;
+                if (dataTarget !== index && dataTarget !== index + 1) {
+                    const draggedRect = rects.splice(index, 1)[0];
+                    let insertAt = dataTarget;
+                    if (index < dataTarget) insertAt--;
+                    insertAt = Math.max(0, Math.min(insertAt, rects.length));
+                    rects.splice(insertAt, 0, draggedRect);
+                    updateRectIds();
+                    drawOverlay();
+                    renderResults();
+                    showToast(`박스를 ${insertAt + 1}번 위치로 이동했습니다`);
+                } else {
+                    renderResults();
+                }
+            } catch(err) {
+                console.error('Drag drop error:', err);
+                // Emergency cleanup
+                if (dragGhostEl) { dragGhostEl.remove(); dragGhostEl = null; }
+                if (dragPlaceholderEl) { dragPlaceholderEl.remove(); dragPlaceholderEl = null; }
+                renderResults();
             }
-        }
 
-        // Auto-scroll results area when near edges
-        const areaRect = resultsArea.getBoundingClientRect();
-        const scrollMargin = 40;
-        if (e.clientY < areaRect.top + scrollMargin) {
-            resultsArea.scrollTop -= 8;
-        } else if (e.clientY > areaRect.bottom - scrollMargin) {
-            resultsArea.scrollTop += 8;
-        }
-    };
+            draggedRectIndex = null;
+            dragCurrentSlot = -1;
+        };
 
-    const onMouseUp = (e) => {
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
+        // Unified cleanup
+        const cleanup = () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onEnd);
+            document.removeEventListener('touchmove', onTouchMove);
+            document.removeEventListener('touchend', onEnd);
+        };
+        const onTouchMove = (e) => { e.preventDefault(); onMouseMove({clientY: e.touches[0].clientY, preventDefault(){}}); };
+        const onEnd = () => { cleanup(); onMouseUp(); };
 
-        // Calculate actual insert index based on placeholder DOM position
-        // Count how many visible cards are BEFORE the placeholder
-        const cards = Array.from(resultsArea.querySelectorAll('.rect-card:not(.dragging)'));
-        let insertBefore = cards.length; // default: end
-        for (let i = 0; i < cards.length; i++) {
-            // Is this card AFTER the placeholder in DOM?
-            if (dragPlaceholderEl.compareDocumentPosition(cards[i]) & Node.DOCUMENT_POSITION_FOLLOWING) {
-                insertBefore = i;
-                break;
-            }
-        }
-
-        // Map visual index to data index (account for the hidden dragged card)
-        let dataInsert = insertBefore;
-        if (insertBefore >= draggedRectIndex) {
-            dataInsert = insertBefore + 1; // the dragged card is still in data at draggedRectIndex
-        }
-
-        // Clean up
-        if (dragGhostEl) { dragGhostEl.remove(); dragGhostEl = null; }
-        if (dragPlaceholderEl) { dragPlaceholderEl.remove(); dragPlaceholderEl = null; }
-
-        // Perform the reorder if position actually changed
-        const fileObj = imageFiles[currentImageIndex];
-        const rects = allResults[fileObj.name].rects;
-        if (dataInsert !== draggedRectIndex && dataInsert !== draggedRectIndex + 1) {
-            const draggedRect = rects.splice(draggedRectIndex, 1)[0];
-            let insertAt = dataInsert;
-            if (draggedRectIndex < dataInsert) insertAt--; // adjust for removed item
-            insertAt = Math.max(0, Math.min(insertAt, rects.length));
-            rects.splice(insertAt, 0, draggedRect);
-            updateRectIds();
-            drawOverlay();
-            renderResults();
-            showToast(`박스 #${draggedRect.id} → ${insertAt + 1}번 위치로 이동`);
-        } else {
-            // No position change, just re-render to restore card
-            renderResults();
-        }
-
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onTouchMove, {passive: false});
+        document.addEventListener('touchend', onEnd);
+    } catch(err) {
+        console.error('Drag start error:', err);
         draggedRectIndex = null;
-        dragInsertIndex = -1;
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+    }
 }
 
 function clearDragIndicators() {
-    // Legacy cleanup (no longer used but kept for safety)
-    document.querySelectorAll('.rect-card.drag-shift-down').forEach(c => c.classList.remove('drag-shift-down'));
-    document.querySelectorAll('.rect-card.drag-shift-up').forEach(c => c.classList.remove('drag-shift-up'));
+    document.querySelectorAll('.rect-card.dragging-source').forEach(c => {
+        c.classList.remove('dragging-source');
+        c.style.display = '';
+    });
 }
 
 function updateRectIds() {
