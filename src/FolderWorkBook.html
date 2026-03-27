@@ -284,7 +284,7 @@
         .canvas-wrapper{display:none;position:relative;max-width:100%;max-height:calc(100vh - 230px);overflow:auto;}
         .canvas-wrapper.active{display:inline-block;}
         .canvas-inner{position:relative;display:inline-block;transform-origin:0 0;transition:transform 0.1s ease-out;}
-        #mainCanvas{display:block;max-width:100%;max-height:calc(100vh - 230px);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);}
+        #mainCanvas{display:block;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);transition:width 0.3s ease, height 0.3s ease;}
         #overlayCanvas{position:absolute;top:0;left:0;width:100%;height:100%;border-radius:8px;cursor:crosshair;}
 
         /* Zoom Controls */
@@ -465,6 +465,7 @@
 
         <!-- Verification Mode -->
         <div class="canvas-wrapper" id="canvasWrapper">
+          <div class="resolution-indicator" id="resolutionIndicator" style="display:none;position:absolute;top:8px;left:8px;z-index:20;background:rgba(0,0,0,0.7);color:#3bff8a;font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 10px;border-radius:6px;pointer-events:none;"></div>
           <div class="canvas-inner" id="canvasInner">
             <canvas id="mainCanvas"></canvas>
             <canvas id="overlayCanvas"></canvas>
@@ -1012,6 +1013,17 @@ function loadCurrentImage() {
     overlayCanvas.width = scaledW;
     overlayCanvas.height = scaledH;
 
+    // CSS 크기도 명시적으로 설정하여 해상도 변경이 시각적으로 반영되도록 함
+    const canvasAreaEl = $('canvasArea');
+    const areaRect = canvasAreaEl.getBoundingClientRect();
+    const maxW = areaRect.width - 48; // padding 24px * 2 제외
+    const maxH = Math.min(areaRect.height - 100, window.innerHeight - 230); // 컨트롤바 공간 확보
+    const fitScale = Math.min(maxW / scaledW, maxH / scaledH, 1);
+    const cssW = Math.floor(scaledW * fitScale);
+    const cssH = Math.floor(scaledH * fitScale);
+    mainCanvas.style.width = cssW + 'px';
+    mainCanvas.style.height = cssH + 'px';
+
     // Draw image (해상도에 맞게 스케일링하여 그리기)
     mainCtx.imageSmoothingEnabled = true;
     mainCtx.imageSmoothingQuality = 'high';
@@ -1019,6 +1031,16 @@ function loadCurrentImage() {
 
     // Draw overlay
     drawOverlay();
+
+    // 해상도 인디케이터 업데이트
+    const resIndicator = $('resolutionIndicator');
+    if (resScale !== 1) {
+        resIndicator.textContent = `${resScale}x | ${scaledW}×${scaledH}px (원본: ${result.image.naturalWidth}×${result.image.naturalHeight})`;
+        resIndicator.style.display = 'block';
+    } else {
+        resIndicator.textContent = `1x | ${scaledW}×${scaledH}px`;
+        resIndicator.style.display = 'block';
+    }
 
     // Update UI
     $('pageIndicator').textContent = `${currentImageIndex + 1} / ${imageFiles.length}`;
