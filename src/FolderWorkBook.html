@@ -356,12 +356,13 @@
         .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:12px;gap:6px;text-align:center;padding:32px;}
         .empty-state-icon{font-size:32px;opacity:0.3;margin-bottom:6px;}
 
-        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;user-select:none;}
+        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), margin 0.25s cubic-bezier(0.2,0.8,0.4,1), opacity 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;user-select:none;}
         @keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-        .rect-card.drag-over-above{border-top:3px solid var(--red-accent);margin-top:8px;transition:margin-top 0.15s ease, border-top 0.15s ease;}
-        .rect-card.drag-over-below{border-bottom:3px solid var(--red-accent);margin-bottom:8px;transition:margin-bottom 0.15s ease, border-bottom 0.15s ease;}
-        .rect-card.dragging{opacity:0.4;background:rgba(255,59,59,0.1);border:1px dashed var(--red-accent);transform:scale(0.97);}
-        .drag-ghost{position:fixed;pointer-events:none;z-index:1000;background:var(--surface2);border:2px solid var(--red-accent);border-radius:8px;padding:8px 12px;box-shadow:0 8px 32px rgba(255,59,59,0.3);opacity:0.95;font-size:12px;color:var(--text);white-space:nowrap;}
+        .rect-card.drag-shift-down{transform:translateY(8px);margin-bottom:calc(4px + var(--drag-card-h, 52px));transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), margin 0.25s cubic-bezier(0.2,0.8,0.4,1);}
+        .rect-card.drag-shift-up{transform:translateY(-8px);margin-top:calc(var(--drag-card-h, 52px));transition:transform 0.25s cubic-bezier(0.2,0.8,0.4,1), margin 0.25s cubic-bezier(0.2,0.8,0.4,1);}
+        .rect-card.dragging{opacity:0;height:0;padding:0;margin:0;border:none;overflow:hidden;pointer-events:none;transition:none;}
+        .drag-ghost{position:fixed;pointer-events:none;z-index:1000;background:var(--surface2);border:2px solid var(--red-accent);border-radius:8px;padding:8px 12px;box-shadow:0 8px 32px rgba(255,59,59,0.3),0 0 0 1px rgba(255,59,59,0.15);opacity:0.95;font-size:12px;color:var(--text);white-space:nowrap;transform:scale(1.04);transition:box-shadow 0.2s;}
+        .drag-placeholder{background:rgba(255,59,59,0.06);border:2px dashed var(--red-accent);border-radius:8px;margin-bottom:4px;transition:height 0.25s cubic-bezier(0.2,0.8,0.4,1), opacity 0.2s;opacity:0.8;}
         .rect-card:hover,.rect-card.active{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
         .rect-card.selected{border-color:var(--yellow);border-width:2px;background:rgba(255,187,59,0.08);}
         .rect-card-checkbox{width:18px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-top:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg);}
@@ -1329,60 +1330,94 @@ function renderResults() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// CUSTOM DRAG-TO-REORDER (with visual feedback)
+// CUSTOM DRAG-TO-REORDER (smooth placeholder animation)
 // ═══════════════════════════════════════════════════════════
+let dragPlaceholderEl = null;
+let dragInsertIndex = -1;
+let dragCardHeight = 0;
+
 function startCardDrag(index, mouseY, cardEl) {
     draggedRectIndex = index;
     dragStartMouseY = mouseY;
-    dragOverIndex = -1;
-    dragOverPosition = '';
+    dragInsertIndex = index;
 
-    // Mark the dragged card
-    cardEl.classList.add('dragging');
+    // Measure card height before collapsing
+    const cardRect = cardEl.getBoundingClientRect();
+    dragCardHeight = cardRect.height + 4; // include margin-bottom
 
-    // Create ghost element
+    // Create ghost element (follows cursor)
     const file = imageFiles[currentImageIndex];
     const result = allResults[file.name];
     const r = result.rects[index];
     dragGhostEl = document.createElement('div');
     dragGhostEl.className = 'drag-ghost';
-    dragGhostEl.textContent = `박스 ${r.id}  (${Math.floor(r.width)}×${Math.floor(r.height)})`;
-    dragGhostEl.style.left = (cardEl.getBoundingClientRect().left) + 'px';
+    dragGhostEl.innerHTML = `<span style="display:flex;align-items:center;gap:6px;"><span style="width:7px;height:7px;background:var(--red-accent);border-radius:50;display:inline-block;"></span> 박스 ${r.id}  (${Math.floor(r.width)}×${Math.floor(r.height)})</span>`;
+    dragGhostEl.style.left = cardRect.left + 'px';
     dragGhostEl.style.top = (mouseY - 16) + 'px';
+    dragGhostEl.style.width = cardRect.width + 'px';
     document.body.appendChild(dragGhostEl);
+
+    // Create placeholder element
+    dragPlaceholderEl = document.createElement('div');
+    dragPlaceholderEl.className = 'drag-placeholder';
+    dragPlaceholderEl.style.height = cardRect.height + 'px';
+
+    // Collapse the dragged card and insert placeholder in its place
+    cardEl.classList.add('dragging');
+    cardEl.parentNode.insertBefore(dragPlaceholderEl, cardEl);
+
+    const resultsArea = $('resultsArea');
 
     const onMouseMove = (e) => {
         e.preventDefault();
-        // Move ghost
+
+        // Move ghost to follow cursor
         if (dragGhostEl) {
             dragGhostEl.style.top = (e.clientY - 16) + 'px';
         }
 
-        // Determine which card we're hovering over
-        clearDragIndicators();
-        const cards = document.querySelectorAll('.rect-card');
-        let foundTarget = false;
-        cards.forEach((c) => {
-            const ci = +c.dataset.i;
-            if (ci === draggedRectIndex) return;
-            const rect = c.getBoundingClientRect();
+        // Find which position the placeholder should be at
+        const cards = Array.from(resultsArea.querySelectorAll('.rect-card:not(.dragging)'));
+        let newInsertIndex = cards.length; // default: end
+
+        for (let i = 0; i < cards.length; i++) {
+            const rect = cards[i].getBoundingClientRect();
             const midY = rect.top + rect.height / 2;
-            if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-                foundTarget = true;
-                if (e.clientY < midY) {
-                    c.classList.add('drag-over-above');
-                    dragOverIndex = ci;
-                    dragOverPosition = 'above';
-                } else {
-                    c.classList.add('drag-over-below');
-                    dragOverIndex = ci;
-                    dragOverPosition = 'below';
-                }
+            if (e.clientY < midY) {
+                newInsertIndex = i;
+                break;
             }
-        });
-        if (!foundTarget) {
-            dragOverIndex = -1;
-            dragOverPosition = '';
+        }
+
+        // Adjust index for original position
+        if (newInsertIndex > draggedRectIndex) {
+            // placeholder is after original position, account for collapsed card
+        }
+
+        // Only move placeholder if position changed
+        if (newInsertIndex !== dragInsertIndex) {
+            dragInsertIndex = newInsertIndex;
+
+            // Remove existing placeholder
+            if (dragPlaceholderEl.parentNode) {
+                dragPlaceholderEl.remove();
+            }
+
+            // Insert placeholder at new position
+            if (newInsertIndex >= cards.length) {
+                resultsArea.appendChild(dragPlaceholderEl);
+            } else {
+                resultsArea.insertBefore(dragPlaceholderEl, cards[newInsertIndex]);
+            }
+        }
+
+        // Auto-scroll results area when near edges
+        const areaRect = resultsArea.getBoundingClientRect();
+        const scrollMargin = 40;
+        if (e.clientY < areaRect.top + scrollMargin) {
+            resultsArea.scrollTop -= 8;
+        } else if (e.clientY > areaRect.bottom - scrollMargin) {
+            resultsArea.scrollTop += 8;
         }
     };
 
@@ -1390,36 +1425,48 @@ function startCardDrag(index, mouseY, cardEl) {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
 
-        // Clean up ghost and styles
-        if (dragGhostEl) {
-            dragGhostEl.remove();
-            dragGhostEl = null;
+        // Calculate actual insert index based on placeholder DOM position
+        // Count how many visible cards are BEFORE the placeholder
+        const cards = Array.from(resultsArea.querySelectorAll('.rect-card:not(.dragging)'));
+        let insertBefore = cards.length; // default: end
+        for (let i = 0; i < cards.length; i++) {
+            // Is this card AFTER the placeholder in DOM?
+            if (dragPlaceholderEl.compareDocumentPosition(cards[i]) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                insertBefore = i;
+                break;
+            }
         }
-        clearDragIndicators();
-        document.querySelectorAll('.rect-card.dragging').forEach(c => c.classList.remove('dragging'));
 
-        // Perform the reorder
-        if (dragOverIndex >= 0 && dragOverIndex !== draggedRectIndex) {
-            const file = imageFiles[currentImageIndex];
-            const rects = allResults[file.name].rects;
+        // Map visual index to data index (account for the hidden dragged card)
+        let dataInsert = insertBefore;
+        if (insertBefore >= draggedRectIndex) {
+            dataInsert = insertBefore + 1; // the dragged card is still in data at draggedRectIndex
+        }
+
+        // Clean up
+        if (dragGhostEl) { dragGhostEl.remove(); dragGhostEl = null; }
+        if (dragPlaceholderEl) { dragPlaceholderEl.remove(); dragPlaceholderEl = null; }
+
+        // Perform the reorder if position actually changed
+        const fileObj = imageFiles[currentImageIndex];
+        const rects = allResults[fileObj.name].rects;
+        if (dataInsert !== draggedRectIndex && dataInsert !== draggedRectIndex + 1) {
             const draggedRect = rects.splice(draggedRectIndex, 1)[0];
-
-            // Calculate insert position
-            let insertAt = dragOverIndex;
-            if (draggedRectIndex < dragOverIndex) insertAt--; // adjust for removed item
-            if (dragOverPosition === 'below') insertAt++;
+            let insertAt = dataInsert;
+            if (draggedRectIndex < dataInsert) insertAt--; // adjust for removed item
             insertAt = Math.max(0, Math.min(insertAt, rects.length));
-
             rects.splice(insertAt, 0, draggedRect);
             updateRectIds();
             drawOverlay();
             renderResults();
-            showToast(`박스 순서가 변경되었습니다`);
+            showToast(`박스 #${draggedRect.id} → ${insertAt + 1}번 위치로 이동`);
+        } else {
+            // No position change, just re-render to restore card
+            renderResults();
         }
 
         draggedRectIndex = null;
-        dragOverIndex = -1;
-        dragOverPosition = '';
+        dragInsertIndex = -1;
     };
 
     document.addEventListener('mousemove', onMouseMove);
@@ -1427,8 +1474,9 @@ function startCardDrag(index, mouseY, cardEl) {
 }
 
 function clearDragIndicators() {
-    document.querySelectorAll('.rect-card.drag-over-above').forEach(c => c.classList.remove('drag-over-above'));
-    document.querySelectorAll('.rect-card.drag-over-below').forEach(c => c.classList.remove('drag-over-below'));
+    // Legacy cleanup (no longer used but kept for safety)
+    document.querySelectorAll('.rect-card.drag-shift-down').forEach(c => c.classList.remove('drag-shift-down'));
+    document.querySelectorAll('.rect-card.drag-shift-up').forEach(c => c.classList.remove('drag-shift-up'));
 }
 
 function updateRectIds() {
