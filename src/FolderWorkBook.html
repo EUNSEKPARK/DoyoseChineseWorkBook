@@ -405,6 +405,8 @@
         .drawing-mode-indicator.active{display:block;}
         .coord-tooltip{position:fixed;pointer-events:none;z-index:1000;background:rgba(0,0,0,0.88);color:#3bff8a;font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid rgba(59,255,138,0.3);white-space:nowrap;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.5);backdrop-filter:blur(8px);}
         .coord-tooltip.active{display:block;}
+        .hand-cursor #overlayCanvas{cursor:grab !important;}
+        .hand-cursor.panning #overlayCanvas{cursor:grabbing !important;}
 
         @media(max-width:1200px){.app-container{grid-template-columns:1fr;grid-template-rows:1fr auto;}.app-container.playlist-open{grid-template-columns:1fr;}.image-playlist-panel{display:none !important;}.sidebar{max-height:50vh;}}
     </style>
@@ -493,6 +495,7 @@
             <button class="btn" id="nextBtn">다음 ▶</button>
             <button class="btn" id="detectBtn">🔍 재감지</button>
             <button class="btn" id="drawModeBtn" title="드로우 모드로 새 박스 그리기">✏️ 그리기</button>
+            <button class="btn" id="handToolBtn" title="핸드 툴: 이미지를 잡고 드래그 (Space 누르고 드래그 / H키)">🤚 이동</button>
             <button class="btn" id="downloadPageJsonBtn" title="현재 페이지의 좌표만 JSON으로 다운로드">📄 페이지 JSON</button>
             <button class="btn btn-success" id="markVerifiedBtn">✓ 검증완료</button>
         </div>
@@ -592,6 +595,14 @@ let zoomLevel = 1;
 let panX = 0;
 let panY = 0;
 let dragSelectStart = null;
+let isHandToolActive = false;
+let isSpaceHeld = false;
+let isPanning = false;
+let panStartMouseX = 0;
+let panStartMouseY = 0;
+let panStartPanX = 0;
+let panStartPanY = 0;
+let spaceDidPan = false;
 
 const $ = id => document.getElementById(id);
 
@@ -1150,6 +1161,69 @@ $('canvasWrapper').addEventListener('wheel', (e) => {
     const delta = e.deltaY > 0 ? -0.2 : 0.2;
     zoomAtPoint(zoomLevel + delta, focal.x, focal.y);
 });
+
+// ═══════════════════════════════════════════════════════════
+// HAND TOOL (Figma-style canvas panning)
+// ═══════════════════════════════════════════════════════════
+$('handToolBtn').addEventListener('click', () => {
+    isHandToolActive = !isHandToolActive;
+    if (isHandToolActive) {
+        $('handToolBtn').classList.add('btn-success');
+        $('canvasWrapper').classList.add('hand-cursor');
+        if (isDrawingMode) {
+            isDrawingMode = false;
+            $('drawModeBtn').classList.remove('btn-success');
+            $('drawingModeIndicator').classList.remove('active');
+        }
+    } else {
+        $('handToolBtn').classList.remove('btn-success');
+        if (!isSpaceHeld) {
+            $('canvasWrapper').classList.remove('hand-cursor');
+        }
+    }
+});
+
+// Panning: capture phase intercepts before overlayCanvas handlers
+$('canvasWrapper').addEventListener('mousedown', function(e) {
+    if (imageFiles.length === 0) return;
+
+    const shouldPan = isHandToolActive || isSpaceHeld || e.button === 1;
+    if (!shouldPan) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    isPanning = true;
+    spaceDidPan = true;
+    panStartMouseX = e.clientX;
+    panStartMouseY = e.clientY;
+    panStartPanX = panX;
+    panStartPanY = panY;
+    $('canvasWrapper').classList.add('panning');
+
+    const onPanMove = function(ev) {
+        ev.preventDefault();
+        panX = panStartPanX + (ev.clientX - panStartMouseX);
+        panY = panStartPanY + (ev.clientY - panStartMouseY);
+        updateCanvasTransform();
+    };
+
+    const onPanUp = function() {
+        isPanning = false;
+        $('canvasWrapper').classList.remove('panning');
+        if (!isHandToolActive && !isSpaceHeld) {
+            $('canvasWrapper').classList.remove('hand-cursor');
+        }
+        document.removeEventListener('mousemove', onPanMove);
+        document.removeEventListener('mouseup', onPanUp);
+    };
+
+    document.addEventListener('mousemove', onPanMove);
+    document.addEventListener('mouseup', onPanUp);
+}, true); // capture phase - fires before overlayCanvas handlers
+
+// Prevent middle-click autoscroll
+$('canvasWrapper').addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
 
 // ═══════════════════════════════════════════════════════════
 // OVERLAY DRAWING
@@ -2011,9 +2085,9 @@ overlayCanvas.addEventListener('mousedown', function(e) {
     renderResults();
 });
 
-// Hover cursor changes (only when not dragging/resizing - those use document-level events)
+// Hover cursor changes (only when not dragging/resizing/panning)
 overlayCanvas.addEventListener('mousemove', function(e) {
-    if (isDrawingMode || isDragging || isResizing || imageFiles.length === 0) return;
+    if (isDrawingMode || isDragging || isResizing || isPanning || isHandToolActive || isSpaceHeld || imageFiles.length === 0) return;
 
     const {x, y} = getCanvasCoordinates(e);
     const file = imageFiles[currentImageIndex];
@@ -2424,9 +2498,16 @@ document.addEventListener('keydown', function(e) {
     } else if (e.key === 'ArrowRight' && currentImageIndex < imageFiles.length - 1) {
         currentImageIndex++;
         loadCurrentImage();
-    } else if (e.key === ' ') {
+    } else if (e.key === ' ' && !e.repeat) {
         e.preventDefault();
-        $('markVerifiedBtn').click();
+        if (e.target.tagName === 'INPUT') return;
+        isSpaceHeld = true;
+        spaceDidPan = false;
+        $('canvasWrapper').classList.add('hand-cursor');
+    } else if (e.key === 'h' || e.key === 'H') {
+        if (e.target.tagName === 'INPUT') return;
+        e.preventDefault();
+        $('handToolBtn').click();
     } else if (e.key === 'd' || e.key === 'D') {
         e.preventDefault();
         $('detectBtn').click();
@@ -2434,8 +2515,22 @@ document.addEventListener('keydown', function(e) {
         e.preventDefault();
         deleteRect(selectedRectIndex);
     } else if (e.key === 'p' || e.key === 'P') {
+        if (e.target.tagName === 'INPUT') return;
         e.preventDefault();
         $('drawModeBtn').click();
+    }
+});
+
+document.addEventListener('keyup', function(e) {
+    if (e.key === ' ') {
+        isSpaceHeld = false;
+        if (!isHandToolActive) {
+            $('canvasWrapper').classList.remove('hand-cursor');
+        }
+        // Space 누르고 패닝 안 했으면 → 검증완료 토글
+        if (!spaceDidPan && imageFiles.length > 0) {
+            $('markVerifiedBtn').click();
+        }
     }
 });
 </script>
