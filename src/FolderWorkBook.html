@@ -403,6 +403,8 @@
         /* Drawing mode */
         .drawing-mode-indicator{position:fixed;bottom:24px;left:24px;background:var(--yellow);color:#000;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:600;display:none;z-index:50;}
         .drawing-mode-indicator.active{display:block;}
+        .coord-tooltip{position:fixed;pointer-events:none;z-index:1000;background:rgba(0,0,0,0.88);color:#3bff8a;font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid rgba(59,255,138,0.3);white-space:nowrap;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.5);backdrop-filter:blur(8px);}
+        .coord-tooltip.active{display:block;}
 
         @media(max-width:1200px){.app-container{grid-template-columns:1fr;grid-template-rows:1fr auto;}.app-container.playlist-open{grid-template-columns:1fr;}.image-playlist-panel{display:none !important;}.sidebar{max-height:50vh;}}
     </style>
@@ -482,6 +484,7 @@
         </div>
 
         <div class="drawing-mode-indicator" id="drawingModeIndicator">✏️ 그리기 모드 활성화</div>
+        <div class="coord-tooltip" id="coordTooltip"></div>
 
         <div class="navigation-bar" id="navigationBar">
             <button class="btn" id="togglePlaylistBtn" title="이미지 목록 열기/닫기">📋 목록</button>
@@ -1213,35 +1216,37 @@ function drawOverlay() {
         overlayCtx.lineWidth = 6;
         overlayCtx.stroke();
 
-        // Corner dots
-        overlayCtx.fillStyle = isSelected ? '#ffbb3b' : '#00ff66';
-        const cornerSize = isSelected ? 10 : 6;
-        [[r.x, r.y], [r.x + r.width, r.y], [r.x, r.y + r.height], [r.x + r.width, r.y + r.height]].forEach(([cx, cy]) => {
-            overlayCtx.beginPath();
-            overlayCtx.arc(cx, cy, cornerSize, 0, Math.PI * 2);
-            overlayCtx.fill();
+        // Corner handles (Photoshop-style squares)
+        const handleSize = isSelected ? 12 : 7;
+        const cornerPositions = [[r.x, r.y], [r.x + r.width, r.y], [r.x, r.y + r.height], [r.x + r.width, r.y + r.height]];
+        cornerPositions.forEach(([cx, cy]) => {
             if (isSelected) {
-                overlayCtx.strokeStyle = '#fff';
-                overlayCtx.lineWidth = 2;
-                overlayCtx.stroke();
+                overlayCtx.fillStyle = 'rgba(0,0,0,0.3)';
+                overlayCtx.fillRect(cx - handleSize + 2, cy - handleSize + 2, handleSize * 2, handleSize * 2);
             }
+            overlayCtx.fillStyle = '#fff';
+            overlayCtx.fillRect(cx - handleSize, cy - handleSize, handleSize * 2, handleSize * 2);
+            overlayCtx.strokeStyle = isSelected ? '#ffbb3b' : '#00ff66';
+            overlayCtx.lineWidth = isSelected ? 3 : 2;
+            overlayCtx.strokeRect(cx - handleSize, cy - handleSize, handleSize * 2, handleSize * 2);
         });
 
-        // Mid-edge handles (only for selected box)
+        // Mid-edge handles (Photoshop-style, only for selected box)
         if (isSelected) {
-            const midHandleSize = 7;
+            const midHandleSize = 10;
             const midHandles = [
                 [r.x + r.width / 2, r.y],                    // top
                 [r.x + r.width / 2, r.y + r.height],         // bottom
                 [r.x, r.y + r.height / 2],                    // left
                 [r.x + r.width, r.y + r.height / 2]           // right
             ];
-            overlayCtx.fillStyle = '#00e5ff';
             midHandles.forEach(([mx, my]) => {
-                overlayCtx.beginPath();
+                overlayCtx.fillStyle = 'rgba(0,0,0,0.3)';
+                overlayCtx.fillRect(mx - midHandleSize + 2, my - midHandleSize + 2, midHandleSize * 2, midHandleSize * 2);
+                overlayCtx.fillStyle = '#fff';
                 overlayCtx.fillRect(mx - midHandleSize, my - midHandleSize, midHandleSize * 2, midHandleSize * 2);
-                overlayCtx.strokeStyle = '#fff';
-                overlayCtx.lineWidth = 2;
+                overlayCtx.strokeStyle = '#00e5ff';
+                overlayCtx.lineWidth = 3;
                 overlayCtx.strokeRect(mx - midHandleSize, my - midHandleSize, midHandleSize * 2, midHandleSize * 2);
             });
         }
@@ -1726,6 +1731,8 @@ let dragStartX = 0;
 let dragStartY = 0;
 let resizeCorner = null;
 let originalRect = null;
+let _docMoveHandler = null;
+let _docUpHandler = null;
 
 function getCanvasCoordinates(e) {
     const rect = overlayCanvas.getBoundingClientRect();
@@ -1789,6 +1796,133 @@ function isInsideRect(x, y, rect) {
     return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
+function showCoordTooltip(e, rect) {
+    const tooltip = $('coordTooltip');
+    tooltip.textContent = `X:${Math.floor(rect.x)}  Y:${Math.floor(rect.y)}  ${Math.floor(rect.width)}×${Math.floor(rect.height)}`;
+    tooltip.style.left = (e.clientX + 18) + 'px';
+    tooltip.style.top = (e.clientY - 36) + 'px';
+    tooltip.classList.add('active');
+}
+
+function hideCoordTooltip() {
+    $('coordTooltip').classList.remove('active');
+}
+
+function startDocumentDrag() {
+    _docMoveHandler = function(e) {
+        e.preventDefault();
+        const {x, y} = getCanvasCoordinates(e);
+        const file = imageFiles[currentImageIndex];
+        const result = allResults[file.name];
+        if (!result) return;
+
+        if (isDragging && selectedRectIndex >= 0) {
+            const rect = result.rects[selectedRectIndex];
+            const dx = x - dragStartX;
+            const dy = y - dragStartY;
+            rect.x = Math.max(0, Math.min(originalRect.x + dx, overlayCanvas.width - rect.width));
+            rect.y = Math.max(0, Math.min(originalRect.y + dy, overlayCanvas.height - rect.height));
+            drawOverlay();
+            renderResults();
+            showCoordTooltip(e, rect);
+        } else if (isResizing && selectedRectIndex >= 0) {
+            const rect = result.rects[selectedRectIndex];
+            const dx = x - dragStartX;
+            const dy = y - dragStartY;
+
+            switch (resizeCorner) {
+                case 'tl':
+                    rect.x = originalRect.x + dx;
+                    rect.y = originalRect.y + dy;
+                    rect.width = originalRect.width - dx;
+                    rect.height = originalRect.height - dy;
+                    break;
+                case 'tr':
+                    rect.y = originalRect.y + dy;
+                    rect.width = originalRect.width + dx;
+                    rect.height = originalRect.height - dy;
+                    break;
+                case 'bl':
+                    rect.x = originalRect.x + dx;
+                    rect.width = originalRect.width - dx;
+                    rect.height = originalRect.height + dy;
+                    break;
+                case 'br':
+                    rect.width = originalRect.width + dx;
+                    rect.height = originalRect.height + dy;
+                    break;
+                case 't':
+                    rect.y = originalRect.y + dy;
+                    rect.height = originalRect.height - dy;
+                    break;
+                case 'b':
+                    rect.height = originalRect.height + dy;
+                    break;
+                case 'l':
+                    rect.x = originalRect.x + dx;
+                    rect.width = originalRect.width - dx;
+                    break;
+                case 'r':
+                    rect.width = originalRect.width + dx;
+                    break;
+            }
+
+            rect.width = Math.max(20, rect.width);
+            rect.height = Math.max(20, rect.height);
+            rect.area = rect.width * rect.height;
+
+            drawOverlay();
+            renderResults();
+            showCoordTooltip(e, rect);
+        }
+    };
+
+    _docUpHandler = function(e) {
+        if (isDragging || isResizing) {
+            const file = imageFiles[currentImageIndex];
+            const result = allResults[file.name];
+            if (result && selectedRectIndex >= 0 && result.rects[selectedRectIndex]) {
+                const rect = result.rects[selectedRectIndex];
+                rect.x = Math.floor(rect.x);
+                rect.y = Math.floor(rect.y);
+                rect.width = Math.floor(rect.width);
+                rect.height = Math.floor(rect.height);
+                rect.area = rect.width * rect.height;
+            }
+            if (result) {
+                result.verified = false;
+                result.status = 'pending';
+            }
+
+            isDragging = false;
+            isResizing = false;
+            resizeCorner = null;
+            originalRect = null;
+
+            drawOverlay();
+            renderResults();
+            updateStats();
+            hideCoordTooltip();
+            showToast('박스가 수정되었습니다.');
+        }
+        stopDocumentDrag();
+    };
+
+    document.addEventListener('mousemove', _docMoveHandler);
+    document.addEventListener('mouseup', _docUpHandler);
+}
+
+function stopDocumentDrag() {
+    if (_docMoveHandler) {
+        document.removeEventListener('mousemove', _docMoveHandler);
+        _docMoveHandler = null;
+    }
+    if (_docUpHandler) {
+        document.removeEventListener('mouseup', _docUpHandler);
+        _docUpHandler = null;
+    }
+}
+
 overlayCanvas.addEventListener('mousedown', function(e) {
     if (isDrawingMode || imageFiles.length === 0) return;
 
@@ -1815,7 +1949,7 @@ overlayCanvas.addEventListener('mousedown', function(e) {
     if (selectedRectIndex >= 0 && selectedRectIndex < result.rects.length) {
         const selectedRect = result.rects[selectedRectIndex];
         const corner = getNearHandle(x, y, selectedRect);
-        
+
         if (corner) {
             isResizing = true;
             resizeCorner = corner;
@@ -1825,6 +1959,7 @@ overlayCanvas.addEventListener('mousedown', function(e) {
             drawOverlay();
             renderResults();
             setCursorForHandle(corner);
+            startDocumentDrag();
             return;
         } else if (isInsideRect(x, y, selectedRect)) {
             isDragging = true;
@@ -1834,11 +1969,12 @@ overlayCanvas.addEventListener('mousedown', function(e) {
             drawOverlay();
             renderResults();
             overlayCanvas.style.cursor = 'move';
+            startDocumentDrag();
             return;
         }
     }
 
-    // Check for corner or box click - deselect first if needed
+    // Check for corner or box click
     for (let i = result.rects.length - 1; i >= 0; i--) {
         const rect = result.rects[i];
         const corner = getNearHandle(x, y, rect);
@@ -1853,6 +1989,7 @@ overlayCanvas.addEventListener('mousedown', function(e) {
             drawOverlay();
             renderResults();
             setCursorForHandle(corner);
+            startDocumentDrag();
             return;
         } else if (isInsideRect(x, y, rect)) {
             isDragging = true;
@@ -1863,6 +2000,7 @@ overlayCanvas.addEventListener('mousedown', function(e) {
             drawOverlay();
             renderResults();
             overlayCanvas.style.cursor = 'move';
+            startDocumentDrag();
             return;
         }
     }
@@ -1873,143 +2011,59 @@ overlayCanvas.addEventListener('mousedown', function(e) {
     renderResults();
 });
 
+// Hover cursor changes (only when not dragging/resizing - those use document-level events)
 overlayCanvas.addEventListener('mousemove', function(e) {
-    if (isDrawingMode || imageFiles.length === 0) return;
+    if (isDrawingMode || isDragging || isResizing || imageFiles.length === 0) return;
 
     const {x, y} = getCanvasCoordinates(e);
     const file = imageFiles[currentImageIndex];
     const result = allResults[file.name];
     if (!result) return;
 
-    if (isDragging && selectedRectIndex >= 0) {
-        const rect = result.rects[selectedRectIndex];
-        const dx = x - dragStartX;
-        const dy = y - dragStartY;
-
-        rect.x = Math.max(0, Math.min(originalRect.x + dx, overlayCanvas.width - rect.width));
-        rect.y = Math.max(0, Math.min(originalRect.y + dy, overlayCanvas.height - rect.height));
-
-        drawOverlay();
-        renderResults();
-    } else if (isResizing && selectedRectIndex >= 0) {
-        const rect = result.rects[selectedRectIndex];
-        const dx = x - dragStartX;
-        const dy = y - dragStartY;
-
-        switch (resizeCorner) {
-            case 'tl':
-                rect.x = originalRect.x + dx;
-                rect.y = originalRect.y + dy;
-                rect.width = originalRect.width - dx;
-                rect.height = originalRect.height - dy;
-                break;
-            case 'tr':
-                rect.y = originalRect.y + dy;
-                rect.width = originalRect.width + dx;
-                rect.height = originalRect.height - dy;
-                break;
-            case 'bl':
-                rect.x = originalRect.x + dx;
-                rect.width = originalRect.width - dx;
-                rect.height = originalRect.height + dy;
-                break;
-            case 'br':
-                rect.width = originalRect.width + dx;
-                rect.height = originalRect.height + dy;
-                break;
-            case 't':
-                rect.y = originalRect.y + dy;
-                rect.height = originalRect.height - dy;
-                break;
-            case 'b':
-                rect.height = originalRect.height + dy;
-                break;
-            case 'l':
-                rect.x = originalRect.x + dx;
-                rect.width = originalRect.width - dx;
-                break;
-            case 'r':
-                rect.width = originalRect.width + dx;
-                break;
+    let cursorSet = false;
+    // Check X delete button hover
+    const delBtnR = 42;
+    for (let r of result.rects) {
+        const btnCx = r.x + r.width;
+        const btnCy = r.y;
+        const dist = Math.sqrt((x - btnCx) ** 2 + (y - btnCy) ** 2);
+        if (dist <= delBtnR + 4) {
+            overlayCanvas.style.cursor = 'pointer';
+            cursorSet = true;
+            break;
         }
-
-        rect.width = Math.max(20, rect.width);
-        rect.height = Math.max(20, rect.height);
-        rect.area = rect.width * rect.height;
-
-        drawOverlay();
-        renderResults();
-    } else {
-        let cursorSet = false;
-        // Check X delete button hover
-        const delBtnR = 42;
-        for (let r of result.rects) {
-            const btnCx = r.x + r.width;
-            const btnCy = r.y;
-            const dist = Math.sqrt((x - btnCx) ** 2 + (y - btnCy) ** 2);
-            if (dist <= delBtnR + 4) {
-                overlayCanvas.style.cursor = 'pointer';
-                cursorSet = true;
-                break;
-            }
-        }
-        if (!cursorSet) {
-        for (let rect of result.rects) {
-            const handle = getNearHandle(x, y, rect);
+    }
+    if (!cursorSet) {
+        // Check selected box handles first for priority cursor
+        if (selectedRectIndex >= 0 && selectedRectIndex < result.rects.length) {
+            const selRect = result.rects[selectedRectIndex];
+            const handle = getNearHandle(x, y, selRect);
             if (handle) {
                 setCursorForHandle(handle);
                 cursorSet = true;
-                break;
-            } else if (isInsideRect(x, y, rect)) {
+            } else if (isInsideRect(x, y, selRect)) {
                 overlayCanvas.style.cursor = 'move';
                 cursorSet = true;
-                break;
             }
-        }
         }
         if (!cursorSet) {
-            overlayCanvas.style.cursor = 'crosshair';
-        }
-    }
-});
-
-overlayCanvas.addEventListener('mouseup', function(e) {
-    if (isDragging || isResizing) {
-        isDragging = false;
-        isResizing = false;
-        resizeCorner = null;
-        originalRect = null;
-
-        const file = imageFiles[currentImageIndex];
-        const result = allResults[file.name];
-        if (result) {
-            // 드래그/리사이즈 완료 시 좌표 정수 내림 처리
-            if (selectedRectIndex >= 0 && result.rects[selectedRectIndex]) {
-                const rect = result.rects[selectedRectIndex];
-                rect.x = Math.floor(rect.x);
-                rect.y = Math.floor(rect.y);
-                rect.width = Math.floor(rect.width);
-                rect.height = Math.floor(rect.height);
-                rect.area = rect.width * rect.height;
+            for (let rect of result.rects) {
+                const handle = getNearHandle(x, y, rect);
+                if (handle) {
+                    setCursorForHandle(handle);
+                    cursorSet = true;
+                    break;
+                } else if (isInsideRect(x, y, rect)) {
+                    overlayCanvas.style.cursor = 'move';
+                    cursorSet = true;
+                    break;
+                }
             }
-            result.verified = false;
-            result.status = 'pending';
         }
-
-        drawOverlay();
-        renderResults();
-        updateStats();
-        showToast('박스가 수정되었습니다. 검증을 다시 진행하세요.');
     }
-    overlayCanvas.style.cursor = 'crosshair';
-});
-
-overlayCanvas.addEventListener('mouseleave', function(e) {
-    isDragging = false;
-    isResizing = false;
-    resizeCorner = null;
-    originalRect = null;
-    overlayCanvas.style.cursor = 'crosshair';
+    if (!cursorSet) {
+        overlayCanvas.style.cursor = 'crosshair';
+    }
 });
 
 // Click on box to scroll to it in sidebar
