@@ -76,6 +76,32 @@
                 '<cellStyles><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
                 '</styleSheet>';
 
+            // Minimal theme XML to prevent Excel warning
+            const themeXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Theme">' +
+                '<a:themeElements>' +
+                '<a:clrScheme name="Office">' +
+                '<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>' +
+                '<a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>' +
+                '<a:dk2><a:srgbClr val="44546A"/></a:dk2>' +
+                '<a:lt2><a:srgbClr val="E7E6E6"/></a:lt2>' +
+                '<a:accent1><a:srgbClr val="4472C4"/></a:accent1>' +
+                '<a:accent2><a:srgbClr val="ED7D31"/></a:accent2>' +
+                '<a:accent3><a:srgbClr val="A5A5A5"/></a:accent3>' +
+                '<a:accent4><a:srgbClr val="FFC000"/></a:accent4>' +
+                '<a:accent5><a:srgbClr val="5B9BD5"/></a:accent5>' +
+                '<a:accent6><a:srgbClr val="70AD47"/></a:accent6>' +
+                '<a:hlink><a:srgbClr val="0563C1"/></a:hlink>' +
+                '<a:folHlink><a:srgbClr val="954F72"/></a:folHlink>' +
+                '</a:clrScheme>' +
+                '<a:fontScheme name="Office">' +
+                '<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>' +
+                '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>' +
+                '</a:fontScheme>' +
+                '<a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme>' +
+                '</a:themeElements>' +
+                '</a:theme>';
+
             const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                 '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
                 '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
@@ -101,6 +127,7 @@
                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
                 '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
                 '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>' +
+                '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>' +
                 '</Relationships>';
 
             // Build ZIP using JSZip-like manual construction
@@ -111,7 +138,8 @@
                 'xl/_rels/workbook.xml.rels': wbRels,
                 'xl/worksheets/sheet1.xml': sheetXml,
                 'xl/styles.xml': stylesXml,
-                'xl/sharedStrings.xml': sharedStringsXml
+                'xl/sharedStrings.xml': sharedStringsXml,
+                'xl/theme/theme1.xml': themeXml
             });
         },
         _buildZip(files) {
@@ -328,8 +356,12 @@
         .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:12px;gap:6px;text-align:center;padding:32px;}
         .empty-state-icon{font-size:32px;opacity:0.3;margin-bottom:6px;}
 
-        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;}
+        .rect-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.2s;animation:slideIn 0.3s ease-out;position:relative;display:flex;align-items:flex-start;gap:8px;user-select:none;}
         @keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        .rect-card.drag-over-above{border-top:3px solid var(--red-accent);margin-top:8px;transition:margin-top 0.15s ease, border-top 0.15s ease;}
+        .rect-card.drag-over-below{border-bottom:3px solid var(--red-accent);margin-bottom:8px;transition:margin-bottom 0.15s ease, border-bottom 0.15s ease;}
+        .rect-card.dragging{opacity:0.4;background:rgba(255,59,59,0.1);border:1px dashed var(--red-accent);transform:scale(0.97);}
+        .drag-ghost{position:fixed;pointer-events:none;z-index:1000;background:var(--surface2);border:2px solid var(--red-accent);border-radius:8px;padding:8px 12px;box-shadow:0 8px 32px rgba(255,59,59,0.3);opacity:0.95;font-size:12px;color:var(--text);white-space:nowrap;}
         .rect-card:hover,.rect-card.active{border-color:var(--red-accent);background:rgba(255,59,59,0.05);}
         .rect-card.selected{border-color:var(--yellow);border-width:2px;background:rgba(255,187,59,0.08);}
         .rect-card-checkbox{width:18px;height:18px;border:1px solid var(--border);border-radius:3px;cursor:pointer;margin-top:2px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg);}
@@ -531,7 +563,8 @@
             </div>
             <button class="btn btn-full btn-success" id="exportJsonBtn">💾 JSON 다운로드</button>
             <button class="btn btn-full" id="exportCsvBtn">📄 CSV 다운로드</button>
-            <button class="btn btn-full" id="exportExcelBtn" style="background:var(--blue);border-color:var(--blue);color:#fff;">📊 Excel 다운로드</button>
+            <button class="btn btn-full" id="exportExcelBtn" style="background:var(--blue);border-color:var(--blue);color:#fff;">📊 Excel 다운로드 (현재 페이지)</button>
+            <button class="btn btn-full" id="exportExcelAllBtn" style="background:var(--surface2);border-color:var(--blue);color:var(--blue);">📊 Excel 전체 다운로드</button>
         </div>
     </div>
 </div>
@@ -902,6 +935,18 @@ $('startBatchBtn').addEventListener('click', async function() {
 
                     const rects = detectRectangles(mainCanvas, satMin, valMin, minArea, maxBoxCount);
 
+                    // 현재 해상도 스케일이 1x가 아니면 좌표 스케일 적용
+                    const resScale = previousResolutionScale || 1;
+                    if (resScale !== 1) {
+                        rects.forEach(r => {
+                            r.x = Math.floor(r.x * resScale);
+                            r.y = Math.floor(r.y * resScale);
+                            r.width = Math.floor(r.width * resScale);
+                            r.height = Math.floor(r.height * resScale);
+                            r.area = r.width * r.height;
+                        });
+                    }
+
                     allResults[file.name] = {
                         image: img,
                         rects: rects,
@@ -958,14 +1003,19 @@ function loadCurrentImage() {
     panY = 0;
     updateCanvasTransform();
 
-    // Set canvas size
-    mainCanvas.width = result.image.naturalWidth;
-    mainCanvas.height = result.image.naturalHeight;
-    overlayCanvas.width = result.image.naturalWidth;
-    overlayCanvas.height = result.image.naturalHeight;
+    // Set canvas size (해상도 스케일 반영)
+    const resScale = previousResolutionScale || 1;
+    const scaledW = Math.floor(result.image.naturalWidth * resScale);
+    const scaledH = Math.floor(result.image.naturalHeight * resScale);
+    mainCanvas.width = scaledW;
+    mainCanvas.height = scaledH;
+    overlayCanvas.width = scaledW;
+    overlayCanvas.height = scaledH;
 
-    // Draw image
-    mainCtx.drawImage(result.image, 0, 0);
+    // Draw image (해상도에 맞게 스케일링하여 그리기)
+    mainCtx.imageSmoothingEnabled = true;
+    mainCtx.imageSmoothingQuality = 'high';
+    mainCtx.drawImage(result.image, 0, 0, scaledW, scaledH);
 
     // Draw overlay
     drawOverlay();
@@ -1192,6 +1242,10 @@ function drawOverlay() {
 // RESULTS RENDERING
 // ═══════════════════════════════════════════════════════════
 let draggedRectIndex = null;
+let dragGhostEl = null;
+let dragStartMouseY = 0;
+let dragOverIndex = -1;
+let dragOverPosition = ''; // 'above' or 'below'
 
 function renderResults() {
     const file = imageFiles[currentImageIndex];
@@ -1203,13 +1257,13 @@ function renderResults() {
     }
 
     $('resultsArea').innerHTML = result.rects.map((r, i) => `
-        <div class="rect-card ${i === selectedRectIndex ? 'selected' : ''} ${selectedRectIndices.has(i) ? 'selected' : ''}" data-i="${i}" draggable="true">
+        <div class="rect-card ${i === selectedRectIndex ? 'selected' : ''} ${selectedRectIndices.has(i) ? 'selected' : ''}" data-i="${i}">
             <div class="rect-card-checkbox ${selectedRectIndices.has(i) ? 'checked' : ''}" data-i="${i}" onclick="event.stopPropagation(); toggleCheckbox(${i})"></div>
             <div class="rect-card-content">
                 <div class="rect-card-confidence">${(r.confidence * 100).toFixed(0)}%</div>
                 <div class="rect-card-header">
                     <div class="rect-card-title">
-                        <span class="drag-handle">⋮⋮</span>
+                        <span class="drag-handle" data-drag-handle="${i}">⋮⋮</span>
                         <span class="dot"></span>
                         박스 <input type="text" value="${r.id}" style="width:30px;background:rgba(255,255,255,0.1);border:1px solid var(--border);padding:2px 4px;border-radius:3px;color:inherit;text-align:center;" onchange="changeBoxNumber(${i}, this.value)" onclick="event.stopPropagation()">
                     </div>
@@ -1237,39 +1291,122 @@ function renderResults() {
             selectedRectIndex = i;
             drawOverlay();
             renderResults();
-            // Scroll to card in sidebar
             card.scrollIntoView({behavior: 'smooth', block: 'nearest'});
         });
 
-        // Drag to reorder
-        card.addEventListener('dragstart', (e) => {
-            draggedRectIndex = i;
-            e.dataTransfer.effectAllowed = 'move';
-            card.style.opacity = '0.5';
-        });
+        // Custom drag reorder via drag-handle
+        const handle = card.querySelector('[data-drag-handle]');
+        if (handle) {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                startCardDrag(i, e.clientY, card);
+            });
+        }
+    });
+}
 
-        card.addEventListener('dragend', (e) => {
-            card.style.opacity = '1';
-        });
+// ═══════════════════════════════════════════════════════════
+// CUSTOM DRAG-TO-REORDER (with visual feedback)
+// ═══════════════════════════════════════════════════════════
+function startCardDrag(index, mouseY, cardEl) {
+    draggedRectIndex = index;
+    dragStartMouseY = mouseY;
+    dragOverIndex = -1;
+    dragOverPosition = '';
 
-        card.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            if (draggedRectIndex !== null && draggedRectIndex !== i) {
-                const rects = allResults[imageFiles[currentImageIndex].name].rects;
-                const draggedRect = rects[draggedRectIndex];
-                rects.splice(draggedRectIndex, 1);
-                rects.splice(i, 0, draggedRect);
-                draggedRectIndex = i;
-                updateRectIds();
-                renderResults();
+    // Mark the dragged card
+    cardEl.classList.add('dragging');
+
+    // Create ghost element
+    const file = imageFiles[currentImageIndex];
+    const result = allResults[file.name];
+    const r = result.rects[index];
+    dragGhostEl = document.createElement('div');
+    dragGhostEl.className = 'drag-ghost';
+    dragGhostEl.textContent = `박스 ${r.id}  (${Math.floor(r.width)}×${Math.floor(r.height)})`;
+    dragGhostEl.style.left = (cardEl.getBoundingClientRect().left) + 'px';
+    dragGhostEl.style.top = (mouseY - 16) + 'px';
+    document.body.appendChild(dragGhostEl);
+
+    const onMouseMove = (e) => {
+        e.preventDefault();
+        // Move ghost
+        if (dragGhostEl) {
+            dragGhostEl.style.top = (e.clientY - 16) + 'px';
+        }
+
+        // Determine which card we're hovering over
+        clearDragIndicators();
+        const cards = document.querySelectorAll('.rect-card');
+        let foundTarget = false;
+        cards.forEach((c) => {
+            const ci = +c.dataset.i;
+            if (ci === draggedRectIndex) return;
+            const rect = c.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                foundTarget = true;
+                if (e.clientY < midY) {
+                    c.classList.add('drag-over-above');
+                    dragOverIndex = ci;
+                    dragOverPosition = 'above';
+                } else {
+                    c.classList.add('drag-over-below');
+                    dragOverIndex = ci;
+                    dragOverPosition = 'below';
+                }
             }
         });
+        if (!foundTarget) {
+            dragOverIndex = -1;
+            dragOverPosition = '';
+        }
+    };
 
-        card.addEventListener('drop', (e) => {
-            e.preventDefault();
-        });
-    });
+    const onMouseUp = (e) => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+
+        // Clean up ghost and styles
+        if (dragGhostEl) {
+            dragGhostEl.remove();
+            dragGhostEl = null;
+        }
+        clearDragIndicators();
+        document.querySelectorAll('.rect-card.dragging').forEach(c => c.classList.remove('dragging'));
+
+        // Perform the reorder
+        if (dragOverIndex >= 0 && dragOverIndex !== draggedRectIndex) {
+            const file = imageFiles[currentImageIndex];
+            const rects = allResults[file.name].rects;
+            const draggedRect = rects.splice(draggedRectIndex, 1)[0];
+
+            // Calculate insert position
+            let insertAt = dragOverIndex;
+            if (draggedRectIndex < dragOverIndex) insertAt--; // adjust for removed item
+            if (dragOverPosition === 'below') insertAt++;
+            insertAt = Math.max(0, Math.min(insertAt, rects.length));
+
+            rects.splice(insertAt, 0, draggedRect);
+            updateRectIds();
+            drawOverlay();
+            renderResults();
+            showToast(`박스 순서가 변경되었습니다`);
+        }
+
+        draggedRectIndex = null;
+        dragOverIndex = -1;
+        dragOverPosition = '';
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+function clearDragIndicators() {
+    document.querySelectorAll('.rect-card.drag-over-above').forEach(c => c.classList.remove('drag-over-above'));
+    document.querySelectorAll('.rect-card.drag-over-below').forEach(c => c.classList.remove('drag-over-below'));
 }
 
 function updateRectIds() {
@@ -1820,16 +1957,30 @@ $('detectBtn').addEventListener('click', function() {
         const file = imageFiles[currentImageIndex];
         const result = allResults[file.name];
 
+        // 감지는 항상 원본 이미지 크기(1x)에서 수행
         mainCanvas.width = result.image.naturalWidth;
         mainCanvas.height = result.image.naturalHeight;
         mainCtx.drawImage(result.image, 0, 0);
 
         result.rects = detectRectangles(mainCanvas, satMin, valMin, minArea, maxBoxCount);
+
+        // 현재 해상도 스케일이 1x가 아니면 좌표를 스케일 적용
+        const resScale = previousResolutionScale || 1;
+        if (resScale !== 1) {
+            result.rects.forEach(r => {
+                r.x = Math.floor(r.x * resScale);
+                r.y = Math.floor(r.y * resScale);
+                r.width = Math.floor(r.width * resScale);
+                r.height = Math.floor(r.height * resScale);
+                r.area = r.width * r.height;
+            });
+        }
+
         result.status = result.rects.length === 0 ? 'warning' : 'pending';
         result.verified = false;
 
-        drawOverlay();
-        renderResults();
+        // loadCurrentImage()로 스케일된 캔버스에 다시 그리기
+        loadCurrentImage();
         updateStats();
 
         $('proc').classList.remove('active');
@@ -1858,15 +2009,15 @@ let previousResolutionScale = 1;
 $('resolutionScale').addEventListener('change', function(e) {
     const newScale = parseFloat(e.target.value);
     if (previousResolutionScale === newScale) return;
-    
+
     const scaleRatio = newScale / previousResolutionScale;
-    
+
     // Show confirmation dialog
     if (!confirm(`해상도를 ${previousResolutionScale}x에서 ${newScale}x로 변경하시겠습니까?\n모든 좌표가 ${scaleRatio.toFixed(2)}배로 스케일됩니다.`)) {
         e.target.value = previousResolutionScale;
         return;
     }
-    
+
     // Scale all existing coordinates
     for (const [filename, result] of Object.entries(allResults)) {
         result.rects.forEach(r => {
@@ -1877,16 +2028,16 @@ $('resolutionScale').addEventListener('change', function(e) {
             r.area = r.width * r.height;
         });
     }
-    
+
     previousResolutionScale = newScale;
-    
-    // Refresh current view
+
+    // 뷰어 전체 새로고침: 이미지 + 오버레이 + 결과 패널 모두 업데이트
     if (imageFiles.length > 0) {
-        drawOverlay();
-        renderResults();
+        loadCurrentImage();
+        updateStats();
     }
-    
-    showToast(`해상도 스케일: ${newScale}x로 변경되었습니다 (모든 좌표 스케일됨)`);
+
+    showToast(`해상도 스케일: ${newScale}x로 변경되었습니다 (모든 좌표 스케일됨, 뷰어 동기화 완료)`);
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -1993,7 +2144,50 @@ $('exportCsvBtn').addEventListener('click', function() {
     showToast('CSV 파일이 다운로드되었습니다!');
 });
 
+// Excel 다운로드 - 현재 페이지만
 $('exportExcelBtn').addEventListener('click', function() {
+    if (imageFiles.length === 0) {
+        showToast('파일을 로드해주세요', 'error');
+        return;
+    }
+    try {
+        const file = imageFiles[currentImageIndex];
+        const result = allResults[file.name];
+        const data = [];
+        data.push(['페이지', '파일명', '박스ID', 'X', 'Y', 'Width', 'Height', 'X2', 'Y2', '신뢰도', '검증상태']);
+
+        result.rects.forEach(r => {
+            data.push([
+                currentImageIndex + 1,
+                file.name,
+                r.id,
+                Math.floor(r.x),
+                Math.floor(r.y),
+                Math.floor(r.width),
+                Math.floor(r.height),
+                Math.floor(r.x + r.width),
+                Math.floor(r.y + r.height),
+                parseFloat(r.confidence.toFixed(2)),
+                result.verified ? '검증완료' : '미검증'
+            ]);
+        });
+
+        const pageName = file.name.replace(/\.[^.]+$/, '');
+        const blob = XLSX_GEN.generate(data, pageName);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pageName + '_coordinates.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(`${file.name} Excel 파일이 다운로드되었습니다!`);
+    } catch (e) {
+        showToast('Excel 내보내기 실패: ' + e.message, 'error');
+    }
+});
+
+// Excel 다운로드 - 전체 이미지
+$('exportExcelAllBtn').addEventListener('click', function() {
     try {
         const data = [];
         data.push(['페이지', '파일명', '박스ID', 'X', 'Y', 'Width', 'Height', 'X2', 'Y2', '신뢰도', '검증상태']);
@@ -2021,10 +2215,10 @@ $('exportExcelBtn').addEventListener('click', function() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'workbook_coordinates.xlsx';
+        a.download = 'workbook_coordinates_all.xlsx';
         a.click();
         URL.revokeObjectURL(url);
-        showToast('Excel 파일이 다운로드되었습니다!');
+        showToast('전체 Excel 파일이 다운로드되었습니다!');
     } catch (e) {
         showToast('Excel 내보내기 실패: ' + e.message, 'error');
     }
