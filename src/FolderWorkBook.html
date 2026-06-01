@@ -2371,21 +2371,15 @@ $('exportExcelBtn').addEventListener('click', function() {
         const file = imageFiles[currentImageIndex];
         const result = allResults[file.name];
         const data = [];
-        data.push(['페이지', '파일명', '박스ID', 'X', 'Y', 'Width', 'Height', 'X2', 'Y2', '신뢰도', '검증상태']);
+        data.push(['박스ID', 'X', 'Y', 'Width', 'Height']);
 
         result.rects.forEach(r => {
             data.push([
-                currentImageIndex + 1,
-                file.name,
                 r.id,
                 Math.floor(r.x),
                 Math.floor(r.y),
                 Math.floor(r.width),
-                Math.floor(r.height),
-                Math.floor(r.x + r.width),
-                Math.floor(r.y + r.height),
-                parseFloat(r.confidence.toFixed(2)),
-                result.verified ? '검증완료' : '미검증'
+                Math.floor(r.height)
             ]);
         });
 
